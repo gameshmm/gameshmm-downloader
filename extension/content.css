@@ -1,0 +1,93 @@
+/* Botão flutuante estilo IDM ("Baixar este vídeo"), reaproveitado em todos os
+   sites suportados (ver shared.js) — YouTube, TikTok, X/Twitter, Instagram e
+   Spotify. Pequeno de propósito — não deve competir com os controles do
+   próprio site nem atrapalhar a visualização. */
+.gdl-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 10px;
+  --gdl-c: #b57bff;
+  background: rgba(18, 14, 32, 0.88);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgba(181, 123, 255, 0.28);
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  font-family: "Roboto", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #f2f2f2;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  opacity: 0.92;
+}
+.gdl-badge:hover { background: rgba(28, 20, 48, 0.96); border-color: var(--gdl-c); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), 0 0 16px -4px var(--gdl-c); opacity: 1; }
+/* mesma ideia do app: o botão assume a cor do site onde está (o roxo é o padrão) */
+.gdl-badge[data-site="youtube"]   { --gdl-c: #ff6b6b; }
+.gdl-badge[data-site="tiktok"]    { --gdl-c: #ff5c80; }
+.gdl-badge[data-site="instagram"] { --gdl-c: #f0648f; }
+.gdl-badge[data-site="twitter"], .gdl-badge[data-site="x"] { --gdl-c: #7dbaff; }
+.gdl-badge[data-site="spotify"]   { --gdl-c: #3fd77a; }
+.gdl-badge.gdl-hidden { display: none; }
+
+.gdl-badge-icon { color: var(--gdl-c); flex: none; filter: drop-shadow(0 0 4px var(--gdl-c)); }
+
+.gdl-badge-label {
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.gdl-badge-close {
+  all: unset;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+}
+.gdl-badge-close:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+
+/* O YouTube reduz bastante a área do player em telas pequenas — encolhe o
+   texto do botão pra um ícone só nesses casos, pra não tomar espaço demais. */
+@media (max-width: 480px) {
+  .gdl-badge-label { display: none; }
+  .gdl-badge { padding: 6px; }
+}
+
+/* Spotify é só áudio — não tem um <video> pra ancorar o badge dentro do
+   player, então ele flutua fixo no canto da tela, acima da barra "tocando
+   agora" (que fica fixa embaixo no Web Player). */
+.gdl-badge-floating {
+  position: fixed;
+  top: auto;
+  right: 20px;
+  bottom: 96px;
+  left: auto;
+  z-index: 9999;
+}
+
+/* Botão de login (YouTube) — fixo no canto da página, independente de ter
+   vídeo aberto ou não. Cor roxa igual o resto da identidade do app (mesma
+   do botão "Conectar ao app" no popup da extensão e do app em si), pra
+   diferenciar do botão de download (escuro, com brilho na cor do site). */
+.gdl-login-badge {
+  bottom: 20px;
+  background: rgba(124, 92, 255, 0.94);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+.gdl-login-badge:hover { background: rgba(143, 115, 255, 0.98); }
+.gdl-login-badge .gdl-badge-icon { color: #fff; }

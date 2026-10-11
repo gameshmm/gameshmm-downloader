@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>gameshmm downloader</title>
+  <link rel="icon" type="image/png" href="assets/icon.png">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <!-- Ícones (sprite) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 3"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2.5"/><circle cx="9" cy="12" r="2.5"/><circle cx="17" cy="18" r="2.5"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="5" width="14" height="14" rx="3"/><path d="M22 8l-6 4 6 4z"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12A9 9 0 0 1 18.5 5.8L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" stroke-width="3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-kbd" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M7 15h10"/></symbol>
+  <symbol id="i-tray" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 12h4l2 3h6l2-3h4"/></symbol>
+  <symbol id="i-subs" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 14h4M13 14h5"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 24 24"><path d="M5 4l10 8-10 8z"/><path d="M19 5v14"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M20 12h-2a2 2 0 1 0-4 0h-2V8a2 2 0 1 0-4 0H6v4a2 2 0 1 0 0 4v4h4a2 2 0 1 1 4 0h4v-4a2 2 0 1 0 0-4z"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></symbol>
+</svg>
+  <div class="bg-effects">
+    <div class="blob b1"></div>
+    <div class="blob b2"></div>
+    <div class="blob b3"></div>
+  </div>
+
+  <!-- Toasts -->
+  <div id="toasts" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
+
+  <!-- Formats Modal -->
+  <div id="formats-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="formats-modal-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="formats-modal-title">Formatos Disponíveis</h3>
+        <button id="modal-close" class="btn-icon" aria-label="Fechar">✕</button>
+      </div>
+      <div id="formats-list" class="formats-list"></div>
+      <div class="modal-footer">
+        <button id="btn-cancel-format" class="btn-secondary" style="flex:1">Fechar</button>
+        <button id="btn-use-format" class="btn-primary" style="flex:1" disabled>Usar Formato</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Changelog Modal -->
+  <div id="changelog-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="changelog-modal-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="changelog-modal-title">Novidades <span id="changelog-version" class="chip-green" style="margin-left:6px"></span></h3>
+        <button id="changelog-close" class="btn-icon" aria-label="Fechar">✕</button>
+      </div>
+      <div id="changelog-list" class="formats-list"></div>
+      <div class="modal-footer">
+        <button id="btn-changelog-ok" class="btn-primary" style="flex:1">Entendi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prompt Modal — o Electron não implementa window.prompt(), então o
+       botão "Salvar preset" do conversor simplesmente não fazia nada. -->
+  <div id="ask-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ask-modal-title">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3 id="ask-modal-title">Título</h3>
+        <button id="ask-close" class="btn-icon" aria-label="Fechar">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="ask-message" class="dim" style="margin-bottom:0.7rem"></p>
+        <input type="text" id="ask-input" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="modal-footer">
+        <button id="ask-cancel" class="btn-secondary" style="flex:1">Cancelar</button>
+        <button id="ask-ok" class="btn-primary" style="flex:1">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container">
+
+    <!-- ── Header ── -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <defs>
+              <linearGradient id="lg1" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#b57bff"/>
+                <stop offset="100%" stop-color="#7a8cff"/>
+              </linearGradient>
+            </defs>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="url(#lg1)" stroke-width="2" stroke-linecap="round"/>
+            <polyline points="7 10 12 15 17 10" stroke="url(#lg1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="12" y1="15" x2="12" y2="3" stroke="url(#lg1)" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h1 class="brand-name"><span class="grad">gameshmm</span> downloader</h1>
+      </div>
+      <div class="login-strip">
+        <span id="login-status" class="login-badge red">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Desconectado
+        </span>
+        <button id="btn-login" class="btn-xs">Conectar</button>
+        <button id="btn-login-alt" class="btn-link-xs" title="Se não quiser usar a extensão do navegador, ler cookies direto de um navegador instalado (menos confiável no Chrome 127+)">Outro método</button>
+        <button id="btn-logout" class="btn-link-xs hidden" title="Desconectar">Sair</button>
+      </div>
+    </header>
+
+    <!-- ── Tabs ── -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="download">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download
+      </button>
+      <button class="tab" data-tab="converter">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        Converter
+      </button>
+      <button class="tab" data-tab="queue">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        Fila
+        <span id="queue-badge" class="pill hidden">0</span>
+      </button>
+      <button class="tab" data-tab="history">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><line x1="12" y1="7" x2="12" y2="12"/><line x1="12" y1="12" x2="15" y2="15"/></svg>
+        Histórico
+      </button>
+      <button class="tab" data-tab="settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Config
+        <span id="settings-badge" class="pill hidden" title="Atualização do yt-dlp disponível">!</span>
+      </button>
+    </nav>
+
+    <main>
+
+      <!-- ────── TAB: DOWNLOAD ────── -->
+      <section id="tab-download" class="tab-pane">
+
+        <!-- ── Novo download (hero) ── -->
+        <div class="card hero-card">
+          <div class="eyebrow"><i></i>Novo download</div>
+          <h2 class="h-title">Cole um link.<br><em>Leve o arquivo.</em></h2>
+
+          <div class="url-field">
+            <svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <input type="text" id="url-input"
+              placeholder="youtube.com/watch?v=…"
+              aria-label="Link para baixar"
+              autocomplete="off" spellcheck="false">
+            <span id="source-chip" class="src-chip hidden"></span>
+            <button id="btn-fetch" class="btn-fetch" title="Buscar" aria-label="Buscar">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </button>
+          </div>
+
+          <div id="clip-bar" class="clip-bar hidden">
+            <svg class="i" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+            <span>Link na área de transferência</span>
+            <code id="clip-url"></code>
+            <button id="clip-go" type="button">Colar e buscar</button>
+          </div>
+
+          <div class="marq" aria-label="Plataformas suportadas">
+            <div class="marq-track" id="marq-track">
+              <button type="button" class="plat" data-ph="25"  data-ex="youtube.com/watch?v=…"><i></i>YouTube</button>
+              <button type="button" class="plat" data-ph="150" data-ex="open.spotify.com/track/…"><i></i>Spotify</button>
+              <button type="button" class="plat" data-ph="355" data-ex="tiktok.com/@usuario/video/…"><i></i>TikTok</button>
+              <button type="button" class="plat" data-ph="8"   data-ex="instagram.com/reel/…"><i></i>Instagram</button>
+              <button type="button" class="plat" data-ph="245" data-ex="x.com/usuario/status/…"><i></i>X · Twitter</button>
+              <button type="button" class="plat" data-ph="295" data-ex="twitch.tv/videos/…"><i></i>Twitch</button>
+              <button type="button" class="plat" data-ph="45"  data-ex="soundcloud.com/artista/musica"><i></i>SoundCloud</button>
+              <button type="button" class="plat" data-ph="215" data-ex="vimeo.com/…"><i></i>Vimeo</button>
+              <button type="button" class="plat" data-ph="38"  data-ex="reddit.com/r/…/comments/…"><i></i>Reddit</button>
+              <button type="button" class="plat" data-ph="255" data-ex="facebook.com/watch/?v=…"><i></i>Facebook</button>
+              <button type="button" class="plat" data-ph="262" data-ex="dailymotion.com/video/…"><i></i>Dailymotion</button>
+              <button type="button" class="plat" data-ph="300" data-ex="qualquer link de vídeo ou áudio"><i></i>+ 1000 sites</button>
+            </div>
+          </div>
+          <p id="marq-note" class="marq-note">clique em uma plataforma para ver como é o link</p>
+        </div>
+
+        <!-- Estado vazio (some quando há busca ou resultado) -->
+        <div id="dl-empty" class="dl-empty">
+          <svg viewBox="0 0 132 90" aria-hidden="true"><path class="tray" d="M14 58v14a6 6 0 0 0 6 6h92a6 6 0 0 0 6-6V58"/><path class="tray" d="M14 58h30a10 10 0 0 0 10 10h24a10 10 0 0 0 10-10h30"/><g class="fall"><path d="M66 6v34"/><path d="M52 28l14 14 14-14"/></g></svg>
+          <h3>Nada por aqui ainda</h3>
+          <p>Cole um link acima ou aperte <kbd>Ctrl</kbd> + <kbd>V</kbd> em qualquer lugar da janela.</p>
+        </div>
+
+        <!-- Loader (esqueleto) -->
+        <div id="loader" class="card loader hidden">
+          <div class="media">
+            <div class="sk sk-thumb"></div>
+            <div class="sk-lines"><div class="sk sk-pill"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div><div class="sk sk-line tiny"></div></div>
+          </div>
+          <p class="loader-line"><span class="spin"></span><span id="loader-text" class="dim">Buscando...</span></p>
+        </div>
+
+        <!-- ── Video Preview ── -->
+        <div id="video-preview" class="card preview hidden">
+          <div class="ambient"></div>
+          <div class="pv">
+            <div class="media">
+              <div class="thumb-wrap">
+                <div class="thumb">
+                  <img id="video-thumbnail" src="" alt="" class="thumb-img">
+                  <span class="play" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg></span>
+                  <span id="video-duration" class="dur"></span>
+                </div>
+              </div>
+              <div class="media-info">
+                <span id="video-source-chip" class="chip">Vídeo</span>
+                <p id="video-title" class="media-title"></p>
+                <span id="video-by" class="by"></span>
+              </div>
+            </div>
+
+            <div class="opts">
+              <div id="dl-profiles" class="profiles">
+                <div class="lbl"><span>Perfis</span><b id="dl-profile-hint"></b></div>
+                <div id="dl-profile-chips" class="pchips" role="group" aria-label="Perfis de download"></div>
+              </div>
+              <div>
+                <p class="lbl">Formato</p>
+                <div class="seg">
+                  <input type="radio" name="fmt" id="fmt-video" value="video" checked>
+                  <label for="fmt-video"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>Vídeo</label>
+                  <input type="radio" name="fmt" id="fmt-audio" value="audio">
+                  <label for="fmt-audio"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Áudio</label>
+                </div>
+              </div>
+
+              <div id="quality-group" class="two">
+                <div>
+                  <div class="lbl"><span>Qualidade</span><b id="q-val"></b></div>
+                  <input type="range" id="quality-range" class="rng" min="0" max="4" step="1" value="4" aria-label="Qualidade">
+                  <div id="q-ticks" class="ticks" aria-hidden="true"></div>
+                  <div class="q-sub">
+                    <span id="fmt-label" class="chip-green hidden"></span>
+                    <button id="btn-formats" class="link-btn">ver formatos</button>
+                  </div>
+                  <select id="quality" class="sel" tabindex="-1" aria-hidden="true" hidden>
+                    <option value="best">Máxima Possível</option>
+                    <option value="2160">4K</option>
+                    <option value="1440">1440p</option>
+                    <option value="1080">1080p Full HD</option>
+                    <option value="720">720p HD</option>
+                    <option value="480">480p</option>
+                    <option value="360">360p</option>
+                  </select>
+                </div>
+                <div>
+                  <div class="lbl"><span>Contêiner</span></div>
+                  <select id="dl-container" class="sel" aria-label="Contêiner">
+                    <option value="mp4">MP4 · compatível</option>
+                    <option value="mkv">MKV · máxima qualidade</option>
+                  </select>
+                </div>
+              </div>
+
+              <div id="audio-quality-group" class="hidden">
+                <div class="lbl"><span>Qualidade do áudio</span><b id="aq-val"></b></div>
+                <input type="range" id="audio-quality-range" class="rng" min="128" max="320" step="64" value="320" aria-label="Qualidade do áudio (kbps)">
+                <div class="ticks" aria-hidden="true"><span>128k</span><span>192k</span><span>256k</span><span>320k</span></div>
+              </div>
+
+              <div class="toggles" id="dl-toggles">
+                <div class="row">
+                  <div class="rt"><span>Legendas</span><small>Baixa e embute quando existirem · idiomas em Config</small></div>
+                  <label class="switch-sm"><input type="checkbox" id="dl-subs" aria-label="Legendas"><span class="slider"></span></label>
+                </div>
+                <div class="row">
+                  <div class="rt"><span>Remover patrocínios</span><small>SponsorBlock pula trechos de propaganda · só YouTube</small></div>
+                  <label class="switch-sm"><input type="checkbox" id="dl-sponsor" aria-label="SponsorBlock"><span class="slider"></span></label>
+                </div>
+              </div>
+            </div>
+
+            <div class="action-row cta">
+              <button id="btn-download" class="btn-primary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span id="btn-download-label">Baixar</span>
+              </button>
+              <button id="btn-cancel" class="btn-danger hidden">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                Cancelar
+              </button>
+              <button id="btn-add-queue" class="btn-secondary btn-sm">+ Fila</button>
+            </div>
+
+            <div id="dl-status" class="status-box prog hidden">
+              <div class="prog-top">
+                <div><div class="state"><i></i><span id="dl-state">Preparando</span></div><p id="dl-text" class="file"></p></div>
+                <div class="pct"><span id="dl-pct">0</span><small>%</small></div>
+              </div>
+              <div class="pbar-bg" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="dl-bar" class="pbar-fill"></div></div>
+              <div class="stats">
+                <div class="stat"><small>Velocidade</small><b id="dl-spd">—</b></div>
+                <div class="stat"><small>Restante</small><b id="dl-eta">—</b></div>
+                <div class="stat"><small>Baixado</small><b id="dl-got">—</b></div>
+              </div>
+              <div class="prog-cta"><button type="button" id="dl-cancel-big" class="btn-ghost btn-sm">Cancelar</button></div>
+            </div>
+            <div id="dl-done" class="done" hidden>
+              <div class="check"><svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27l8 8 15-17"/></svg></div>
+              <div><h3>Download concluído</h3><p id="dl-done-file"></p></div>
+              <div class="cta"><button type="button" id="dl-done-open" class="btn-primary"><svg class="i"><use href="#i-folder"/></svg>Abrir pasta</button><button type="button" id="dl-done-again" class="btn-ghost">Baixar outro</button></div>
+            </div>
+            <button id="btn-open-folder" class="btn-open hidden">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Abrir Pasta
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Playlist Preview ── -->
+        <div id="playlist-preview" class="card preview hidden">
+          <div class="ambient"></div>
+          <div class="pv">
+            <div class="media media-compact">
+              <div class="playlist-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              </div>
+              <div class="media-info">
+                <span class="chip chip-purple">YouTube Playlist</span>
+                <p id="playlist-title" class="media-title"></p>
+                <span id="playlist-count" class="by"></span>
+              </div>
+            </div>
+
+            <div id="pl-items-wrap" class="hidden" style="margin-top:1rem">
+              <div class="pl-items-header">
+                <button type="button" id="pl-select-all" class="btn-link">Selecionar todos</button>
+                <button type="button" id="pl-select-none" class="btn-link">Nenhum</button>
+                <span id="pl-selected-counter" class="dim" style="margin-left:auto;font-size:0.76rem"></span>
+              </div>
+              <div id="pl-items-list" class="pl-items-list"></div>
+            </div>
+
+            <div class="opts">
+              <div>
+                <p class="lbl">Formato</p>
+                <div class="seg">
+                  <input type="radio" name="pl-fmt" id="pl-fmt-video" value="video" checked>
+                  <label for="pl-fmt-video"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>Vídeo MP4</label>
+                  <input type="radio" name="pl-fmt" id="pl-fmt-audio" value="audio">
+                  <label for="pl-fmt-audio"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Áudio MP3</label>
+                </div>
+              </div>
+              <div id="pl-quality-group">
+                <p class="lbl">Qualidade</p>
+                <select id="pl-quality" class="sel">
+                  <option value="best">Máxima Possível</option>
+                  <option value="1080">1080p Full HD</option>
+                  <option value="720">720p HD</option>
+                  <option value="480">480p</option>
+                  <option value="360">360p</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="action-row queue-action-row cta">
+              <button id="btn-dl-playlist" class="btn-primary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Baixar Playlist
+              </button>
+              <div class="concurrency-group">
+                <span class="dim" style="font-size:0.78rem;white-space:nowrap">⚡ Paralelos</span>
+                <select id="pl-concurrency" class="sel sel-sm">
+                  <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option>
+                </select>
+              </div>
+              <button id="btn-cancel-pl" class="btn-danger hidden">Cancelar</button>
+            </div>
+
+            <div id="pl-status" class="status-box hidden">
+              <div id="pl-slots" class="pl-slots"></div>
+              <div class="pl-info-row">
+                <span id="pl-label" class="dim"></span>
+                <span id="pl-counter" class="dim"></span>
+              </div>
+              <div class="pbar-bg" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="pl-bar" class="pbar-fill"></div></div>
+              <p id="pl-text" class="dim"></p>
+            </div>
+            <button id="btn-open-folder-pl" class="btn-open hidden">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Abrir Pasta
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Spotify Preview ── -->
+        <div id="spotify-preview" class="card preview preview-spotify hidden">
+          <div class="ambient"></div>
+          <div class="pv">
+            <div class="media media-compact">
+              <img id="spotify-thumb" src="" alt="" class="media-thumb media-thumb-sq">
+              <div class="media-info">
+                <span id="spotify-type-chip" class="chip chip-spotify">Música</span>
+                <p id="spotify-name" class="media-title"></p>
+                <span id="spotify-artist" class="by"></span>
+                <span id="spotify-count" class="by" style="display:none"></span>
+              </div>
+            </div>
+
+            <div class="opts">
+              <div>
+                <p class="lbl">Formato</p>
+                <div class="seg n4">
+                  <input type="radio" name="sp-fmt" id="sp-fmt-mp3" value="mp3" checked><label for="sp-fmt-mp3">MP3</label>
+                  <input type="radio" name="sp-fmt" id="sp-fmt-flac" value="flac"><label for="sp-fmt-flac">FLAC</label>
+                  <input type="radio" name="sp-fmt" id="sp-fmt-m4a" value="m4a"><label for="sp-fmt-m4a">M4A</label>
+                  <input type="radio" name="sp-fmt" id="sp-fmt-ogg" value="ogg"><label for="sp-fmt-ogg">OGG</label>
+                </div>
+              </div>
+              <div>
+                <p class="lbl">Bitrate</p>
+                <select id="sp-bitrate" class="sel">
+                  <option value="320k">320 kbps (máximo)</option>
+                  <option value="256k">256 kbps</option>
+                  <option value="192k">192 kbps</option>
+                  <option value="128k">128 kbps</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="action-row cta">
+              <button id="btn-spotify-dl" class="btn-spotify">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Baixar do Spotify
+              </button>
+              <button id="btn-spotify-cancel" class="btn-danger hidden">Cancelar</button>
+            </div>
+
+            <div id="spotify-dl-status" class="status-box hidden">
+              <div class="pbar-bg" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="spotify-dl-bar" class="pbar-fill pbar-spotify"></div></div>
+              <p id="spotify-dl-text" class="dim"></p>
+              <div id="spotify-slots" class="pl-slots" style="margin-top:8px"></div>
+            </div>
+            <button id="btn-spotify-open" class="btn-open hidden">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Abrir Pasta
+            </button>
+            <pre id="spotify-log" class="log-box hidden" style="max-height:90px"></pre>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ────── TAB: CONVERTER ────── -->
+      <section id="tab-converter" class="tab-pane hidden">
+        <div class="card">
+          <div class="eyebrow"><i></i>Conversor local</div>
+          <h2 class="h-title">Qualquer arquivo,<br><em>outro formato.</em></h2>
+
+          <div class="dz" id="btn-conv-pick" tabindex="0" role="button" aria-label="Escolher arquivo de entrada">
+            <div class="big"><svg class="i"><use href="#i-file"/></svg></div>
+            <h3 id="conv-dz-h">Solte um arquivo aqui</h3>
+            <p id="conv-dz-p">ou clique para escolher · MP4, MKV, WebM, AVI, MOV, MP3, WAV, FLAC, AAC…</p>
+          </div>
+          <input type="text" id="conv-file-name" hidden readonly aria-hidden="true" tabindex="-1">
+          <div id="conv-file-info" class="finfo hidden"></div>
+        </div>
+
+        <div id="conv-options" class="card hidden">
+          <div class="preset-row">
+            <select id="conv-preset-select" class="sel" aria-label="Preset">
+              <option value="">Preset: nenhum (configurar manualmente)</option>
+            </select>
+            <button id="btn-conv-preset-save" class="btn-ghost btn-sm" title="Salvar as opções atuais como um novo preset"><svg class="i"><use href="#i-check"/></svg>Salvar</button>
+            <button id="btn-conv-preset-delete" class="btn-ghost btn-sm btn-danger-soft hidden" title="Apagar este preset" aria-label="Apagar preset"><svg class="i"><use href="#i-trash"/></svg></button>
+          </div>
+
+          <div class="opts">
+            <div class="two">
+              <div>
+                <div class="lbl"><span>Cortar por tempo</span><b>opcional</b></div>
+                <div class="trim">
+                  <input type="text" class="inp mono" id="conv-trim-start" placeholder="00:00:00" autocomplete="off" spellcheck="false" aria-label="Início do corte">
+                  <svg class="i"><use href="#i-arrow"/></svg>
+                  <input type="text" class="inp mono" id="conv-trim-end" placeholder="00:00:00" autocomplete="off" spellcheck="false" aria-label="Fim do corte">
+                </div>
+              </div>
+              <div>
+                <div class="lbl"><span>Tamanho alvo</span><b>opcional</b></div>
+                <div class="inp-unit"><input type="number" class="inp mono" id="conv-target-size" min="1" step="1" placeholder="ex: 25" aria-label="Tamanho alvo em MB"><span>MB</span></div>
+              </div>
+            </div>
+            <p class="note hidden" id="conv-size-note">Com tamanho alvo, o bitrate é ajustado sozinho pra caber — a qualidade e o bitrate escolhidos abaixo são ignorados.</p>
+
+            <div class="two">
+              <div>
+                <div class="lbl">Converter para</div>
+                <div class="seg">
+                  <input type="radio" name="conv-kind" id="conv-kind-video" value="video" checked>
+                  <label for="conv-kind-video" id="conv-kind-video-option"><svg class="i"><use href="#i-video"/></svg>Vídeo</label>
+                  <input type="radio" name="conv-kind" id="conv-kind-audio" value="audio">
+                  <label for="conv-kind-audio"><svg class="i"><use href="#i-music"/></svg>Áudio</label>
+                </div>
+                <p id="conv-audio-only-hint" class="note hidden">Arquivo de áudio — só é possível converter para outro formato de áudio.</p>
+              </div>
+              <div id="conv-container-group">
+                <div class="lbl">Formato</div>
+                <select id="conv-container" class="sel" aria-label="Formato">
+                  <option value="mp4">MP4</option>
+                  <option value="mkv">MKV</option>
+                  <option value="webm">WebM</option>
+                  <option value="avi">AVI</option>
+                  <option value="mov">MOV</option>
+                </select>
+              </div>
+              <div id="conv-audioformat-group" class="hidden">
+                <div class="lbl">Formato</div>
+                <select id="conv-audioformat" class="sel" aria-label="Formato de áudio">
+                  <option value="mp3">MP3</option>
+                  <option value="aac">AAC (M4A)</option>
+                  <option value="wav">WAV (sem perdas)</option>
+                  <option value="flac">FLAC (sem perdas)</option>
+                  <option value="ogg">OGG</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="conv-video-opts" class="vopts">
+            <div class="grid3">
+              <div>
+                <div class="lbl">Codec de vídeo</div>
+                <select id="conv-vcodec" class="sel" aria-label="Codec de vídeo">
+                  <option value="copy">Manter original · rápido</option>
+                  <option value="h264" selected>H.264 · compatível</option>
+                  <option value="h265">H.265 · menor</option>
+                  <option value="vp9">VP9 · ideal p/ WebM</option>
+                  <option value="av1">AV1 · o menor (lento)</option>
+                </select>
+              </div>
+              <div>
+                <div class="lbl">Codec de áudio</div>
+                <select id="conv-acodec" class="sel" aria-label="Codec de áudio">
+                  <option value="copy">Manter original</option>
+                  <option value="aac" selected>AAC</option>
+                  <option value="mp3">MP3</option>
+                  <option value="opus">Opus</option>
+                </select>
+              </div>
+              <div id="conv-quality-group" class="dimable">
+                <div class="lbl">Qualidade</div>
+                <div class="seg n3" id="conv-quality-seg">
+                  <input type="radio" name="conv-q" id="conv-q-high" value="high"><label for="conv-q-high">Alta</label>
+                  <input type="radio" name="conv-q" id="conv-q-default" value="default" checked><label for="conv-q-default">Padrão</label>
+                  <input type="radio" name="conv-q" id="conv-q-low" value="low"><label for="conv-q-low">Menor</label>
+                </div>
+                <select id="conv-quality" class="sel" tabindex="-1" aria-hidden="true" hidden>
+                  <option value="high">Alta (arquivo maior)</option>
+                  <option value="default" selected>Padrão</option>
+                  <option value="low">Menor tamanho</option>
+                </select>
+              </div>
+            </div>
+            <p id="conv-vcodec-hint" class="note hidden"></p>
+            <p id="conv-gpu-hint" class="gpu hidden"></p>
+          </div>
+
+            <div id="conv-audio-opts" class="dimable hidden">
+              <div class="lbl"><span>Bitrate</span><b id="conv-bitrate-val">192 kbps</b></div>
+              <input type="range" id="conv-bitrate-range" class="rng" min="0" max="3" step="1" value="1" aria-label="Bitrate">
+              <div class="ticks" aria-hidden="true"><span>128k</span><span>192k</span><span>256k</span><span>320k</span></div>
+              <select id="conv-bitrate" class="sel" tabindex="-1" aria-hidden="true" hidden>
+                <option value="320k">320 kbps (máximo)</option>
+                <option value="256k">256 kbps</option>
+                <option value="192k" selected>192 kbps</option>
+                <option value="128k">128 kbps</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="est"><span class="lb">Saída estimada</span><b id="conv-est">—</b><span id="conv-est-note" class="by"></span></div>
+
+          <div class="action-row cta">
+            <button id="btn-convert" class="btn-primary">
+              <svg class="i"><use href="#i-swap"/></svg>
+              Converter
+            </button>
+            <button id="btn-conv-cancel" class="btn-danger hidden">
+              <svg class="i"><use href="#i-x"/></svg>
+              Cancelar
+            </button>
+          </div>
+
+          <div id="conv-status" class="status-box prog hidden">
+            <div class="prog-top">
+              <div><div class="state"><i></i><span id="conv-state">Preparando</span></div><p id="conv-text" class="file"></p></div>
+              <div class="pct"><span id="conv-pct">0</span><small>%</small></div>
+            </div>
+            <div class="pbar-bg" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="conv-bar" class="pbar-fill"></div></div>
+            <div class="stats">
+              <div class="stat"><small>Velocidade</small><b id="conv-spd">—</b></div>
+              <div class="stat"><small>Restante</small><b id="conv-eta">—</b></div>
+              <div class="stat"><small>Saída</small><b id="conv-out">—</b></div>
+            </div>
+            <div class="prog-cta"><button type="button" id="conv-cancel-big" class="btn-ghost btn-sm btn-danger-soft"><svg class="i"><use href="#i-x"/></svg>Cancelar</button></div>
+          </div>
+          <div id="conv-done" class="done" hidden>
+            <div class="check"><svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27l8 8 15-17"/></svg></div>
+            <div><h3>Conversão concluída</h3><p id="conv-done-file"></p></div>
+            <div class="cta"><button type="button" id="conv-done-open" class="btn-primary"><svg class="i"><use href="#i-folder"/></svg>Abrir pasta</button><button type="button" id="conv-done-again" class="btn-ghost">Converter outro</button></div>
+          </div>
+          <button id="btn-conv-open-folder" class="btn-open hidden">
+            <svg class="i"><use href="#i-folder"/></svg>
+            Abrir Pasta
+          </button>
+        </div>
+      </section>
+
+      <!-- ────── TAB: QUEUE ────── -->
+      <section id="tab-queue" class="tab-pane hidden">
+        <div class="card">
+          <div class="cardhead"><span class="tile"><svg class="i"><use href="#i-plus"/></svg></span><div><h3>Adicionar à fila</h3><p>Cole vários links de uma vez — a fila fica salva mesmo se você fechar o app</p></div></div>
+          <div class="q-in">
+            <textarea id="queue-url" class="ta" rows="2" placeholder="Cole um ou vários links (um por linha) e aperte Enter…" autocomplete="off" spellcheck="false" aria-label="Links para adicionar à fila"></textarea>
+            <button id="btn-add-to-queue" class="btn-fetch" title="Adicionar à fila" aria-label="Adicionar à fila"><svg class="i"><use href="#i-plus"/></svg></button>
+          </div>
+          <div class="two" style="margin-top:16px">
+            <div>
+              <div class="lbl">Formato padrão</div>
+              <div class="seg">
+                <input type="radio" name="q-fmt" id="q-fmt-video" value="video" checked><label for="q-fmt-video"><svg class="i"><use href="#i-video"/></svg>Vídeo</label>
+                <input type="radio" name="q-fmt" id="q-fmt-audio" value="audio"><label for="q-fmt-audio"><svg class="i"><use href="#i-music"/></svg>MP3</label>
+              </div>
+            </div>
+            <div>
+              <div class="lbl">Qualidade padrão</div>
+              <select id="q-quality" class="sel" aria-label="Qualidade padrão">
+                <option value="best">Máxima</option>
+                <option value="1080">1080p</option>
+                <option value="720">720p</option>
+                <option value="480">480p</option>
+                <option value="360">360p</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div id="queue-list" class="queue-list list"></div>
+        <div id="queue-empty" class="empty-state">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          <p>Fila vazia</p>
+          <p class="empty-hint">Adicione links acima — dá pra colar vários de uma vez. A fila fica salva mesmo se você fechar o app.</p>
+        </div>
+
+        <div class="qbar action-row queue-action-row">
+          <button id="btn-start-queue" class="btn-primary" disabled>
+            <svg class="i"><use href="#i-play"/></svg>
+            Iniciar Fila
+          </button>
+          <div class="par concurrency-group"><svg class="i"><use href="#i-zap"/></svg><span>Paralelos</span>
+            <select id="queue-concurrency" class="sel sel-sm sel-xs" aria-label="Downloads em paralelo">
+              <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+            </select>
+          </div>
+          <div class="par concurrency-group" title="Ação após concluir a fila">
+            <svg class="i"><use href="#i-clock"/></svg><span>Ao concluir</span>
+            <select id="queue-on-finish" class="sel sel-sm sel-xs" aria-label="Ação ao concluir fila">
+              <option value="none" selected>Nenhuma</option>
+              <option value="sleep">Suspender PC</option>
+              <option value="shutdown">Desligar PC</option>
+            </select>
+          </div>
+          <button id="btn-pause-queue" class="btn-ghost btn-sm hidden">
+            <svg class="i"><use href="#i-pause"/></svg>
+            Pausar
+          </button>
+          <button id="btn-cancel-queue" class="btn-ghost btn-sm btn-danger-soft hidden">
+            <svg class="i"><use href="#i-x"/></svg>
+            Cancelar fila
+          </button>
+          <button id="btn-retry-errors" class="btn-ghost btn-sm hidden">
+            <svg class="i"><use href="#i-refresh"/></svg>
+            Repetir falhas
+          </button>
+          <button id="btn-clear-queue" class="btn-ghost btn-sm">Limpar</button>
+        </div>
+        <div id="queue-status" class="card q-status status-box hidden">
+          <div class="pbar-bg" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="queue-bar" class="pbar-fill"></div></div>
+          <p id="queue-text" class="dim"></p>
+        </div>
+      </section>
+
+      <!-- ────── TAB: HISTORY ────── -->
+      <section id="tab-history" class="tab-pane hidden">
+        <div class="sect">
+          <div><h2>Histórico</h2><p id="history-count"></p></div>
+          <button id="btn-clear-history" class="btn-ghost btn-sm btn-danger-soft"><svg class="i"><use href="#i-trash"/></svg>Limpar tudo</button>
+        </div>
+        <label class="search"><svg class="i"><use href="#i-search"/></svg><input type="text" id="history-search" placeholder="Buscar por título ou link…" autocomplete="off" spellcheck="false" aria-label="Buscar no histórico"></label>
+        <div class="history-filters hfilters">
+          <select id="history-status-filter" class="sel sel-sm" aria-label="Status">
+            <option value="">Todos os status</option>
+            <option value="success">Sucesso</option>
+            <option value="error">Erro</option>
+          </select>
+          <select id="history-type-filter" class="sel sel-sm" aria-label="Tipo">
+            <option value="">Vídeo e Áudio</option>
+            <option value="video">Só Vídeos</option>
+            <option value="audio">Só Áudios</option>
+          </select>
+          <select id="history-source-filter" class="sel sel-sm" aria-label="Origem">
+            <option value="">Todas as origens</option>
+          </select>
+        </div>
+        <div id="history-list" class="history-list list"></div>
+        <div id="history-empty" class="empty-state">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/></svg>
+          <p>Nenhum download registrado ainda</p>
+        </div>
+      </section>
+
+      <!-- ────── TAB: SETTINGS ────── -->
+      <section id="tab-settings" class="tab-pane hidden">
+        <div class="subnav" id="cf-nav" aria-label="Seções da configuração">
+          <button type="button" class="sub" data-go="cf-sys">Sistema</button><button type="button" class="sub" data-go="cf-look">Aparência</button><button type="button" class="sub" data-go="cf-dl">Downloads</button><button type="button" class="sub" data-go="cf-opt">Opções</button><button type="button" class="sub" data-go="cf-yt">yt-dlp</button><button type="button" class="sub" data-go="cf-ext">Extensão</button><button type="button" class="sub" data-go="cf-about">Sobre</button>
+        </div>
+
+        <!-- Status do sistema -->
+        <div class="card" id="cf-sys">
+          <div class="cardhead">
+            <span class="tile"><svg class="i"><use href="#i-cpu"/></svg></span>
+            <div><h3>Status do sistema</h3><p>Tudo o que o app precisa pra baixar</p></div>
+            <button id="btn-refresh-status" class="btn-ghost btn-sm act" title="Checar de novo"><svg class="i"><use href="#i-refresh"/></svg>Atualizar</button>
+          </div>
+
+          <div id="admin-warning" class="notice notice-warn hidden">
+            <svg class="i"><use href="#i-warn"/></svg>
+            <div class="notice-body">
+              <b>O app está aberto como administrador.</b>
+              <span>Não é preciso — e atrapalha: o Windows impede o navegador de falar com um programa elevado, então o botão da extensão pode não responder.</span>
+            </div>
+            <button id="btn-relaunch-normal" class="btn-ghost btn-sm">Reabrir normal</button>
+          </div>
+
+          <div id="status-grid" class="status-grid"></div>
+          <p id="status-userdata" class="note mono status-path"></p>
+        </div>
+
+        <!-- Aparência -->
+        <div class="card" id="cf-look">
+          <div class="cardhead"><span class="tile"><svg class="i"><use href="#i-sliders"/></svg></span><div><h3>Aparência</h3><p>Aplicado na hora, sem precisar salvar</p></div></div>
+          <div style="margin-top:14px">
+            <div class="lbl"><span>Cor de destaque</span><b id="ui-hue-val">Roxo (padrão)</b></div>
+            <input type="range" id="ui-hue" class="rng hue-track" min="0" max="360" value="300" aria-label="Matiz da cor de destaque">
+            <div id="ui-swatches" class="swatches sw-row" role="radiogroup" aria-label="Cor da marca">
+              <button type="button" class="swatch" style="--sw:300" data-h="300" role="radio" aria-checked="true" title="Roxo (padrão)" aria-label="Roxo (padrão)"></button>
+              <button type="button" class="swatch" style="--sw:335" data-h="335" role="radio" aria-checked="false" title="Rosa" aria-label="Rosa"></button>
+              <button type="button" class="swatch" style="--sw:250" data-h="250" role="radio" aria-checked="false" title="Azul" aria-label="Azul"></button>
+              <button type="button" class="swatch" style="--sw:155" data-h="155" role="radio" aria-checked="false" title="Verde" aria-label="Verde"></button>
+              <button type="button" class="swatch" style="--sw:50" data-h="50" role="radio" aria-checked="false" title="Laranja" aria-label="Laranja"></button>
+            </div>
+            <button type="button" class="lnk hidden" id="ui-hue-reset" style="margin-top:12px">Restaurar roxo padrão</button>
+          </div>
+          <div class="rows">
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-globe"/></svg></span><div class="rt"><span>Cor por plataforma</span><small>Ao colar um link, o fundo e os brilhos assumem a cor do YouTube, Spotify, TikTok… Desligado, tudo fica na cor de destaque.</small></div><label class="switch-sm"><input type="checkbox" id="ui-plat-tint" checked aria-label="Cor por plataforma"><span class="slider"></span></label></div>
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-zap"/></svg></span><div class="rt"><span>Fundo animado</span><small>Malha de gradiente em movimento lento</small></div><label class="switch-sm"><input type="checkbox" id="ui-bg-anim" checked aria-label="Fundo animado"><span class="slider"></span></label></div>
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-pause"/></svg></span><div class="rt"><span>Reduzir movimento</span><small>Desliga animações e transições (o app também respeita a opção do Windows)</small></div><label class="switch-sm"><input type="checkbox" id="ui-reduce" aria-label="Reduzir movimento"><span class="slider"></span></label></div>
+          </div>
+        </div>
+
+        <!-- Pasta padrão + comportamento -->
+        <div class="card" id="cf-dl">
+          <div class="cardhead"><span class="tile"><svg class="i"><use href="#i-folder"/></svg></span><div><h3>Pasta padrão</h3><p>Sugestão de destino ao iniciar um download</p></div></div>
+          <div class="pick">
+            <input type="text" class="inp mono" id="settings-folder" placeholder="Nenhuma pasta definida" readonly aria-label="Pasta padrão">
+            <button id="btn-pick-folder" class="btn-ghost btn-sm">Escolher</button>
+          </div>
+          <div class="rows">
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-clip"/></svg></span><div class="rt"><span>Detectar links copiados</span><small>Ao copiar um link suportado, o app avisa e oferece colar e buscar sozinho. Nada é enviado pra fora do seu PC.</small></div><label class="switch-sm"><input type="checkbox" id="settings-clipboard-watch" checked aria-label="Detectar links copiados"><span class="slider"></span></label></div>
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-tray"/></svg></span><div class="rt"><span>Minimizar para a bandeja ao fechar</span><small>Em vez de encerrar o app</small></div><label class="switch-sm"><input type="checkbox" id="settings-tray" checked aria-label="Minimizar para a bandeja"><span class="slider"></span></label></div>
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-kbd"/></svg></span><div class="rt"><span>Atalho global <span id="settings-shortcut-label" class="dim">(Ctrl+Shift+D)</span></span><small>Cole o link e abra o app de qualquer lugar — funciona mesmo minimizado ou em segundo plano</small></div><label class="switch-sm"><input type="checkbox" id="settings-global-shortcut" checked aria-label="Atalho global"><span class="slider"></span></label></div>
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-gauge"/></svg></span><div class="rt"><span>Limite de velocidade por download</span><small>Vazio ou 0 = sem limite. Útil pra baixar em segundo plano sem engasgar o resto da internet. Vale por download — com 3 paralelos, o consumo total é até 3× esse valor.</small></div>
+              <div class="limit"><input type="number" class="inp inp-sm mono" id="settings-limit-rate" min="0" step="0.5" placeholder="sem limite" aria-label="Limite de velocidade"><select id="settings-limit-unit" class="sel sel-sm sel-xs" aria-label="Unidade"><option value="M">MB/s</option><option value="K">KB/s</option></select></div></div>
+          </div>
+        </div>
+
+        <!-- Opções de download -->
+        <div class="card" id="cf-opt">
+          <div class="cardhead"><span class="tile"><svg class="i"><use href="#i-download"/></svg></span><div><h3>Opções de download</h3><p>Valem pra vídeo único, fila e playlist — entram em vigor no próximo download</p></div></div>
+          <div class="rows">
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-subs"/></svg></span><div class="rt"><span>Legendas</span></div>
+              <select id="settings-subs-mode" class="sel sel-sm" aria-label="Legendas"><option value="off">Não baixar</option><option value="embed">Embutir no vídeo</option><option value="file">Salvar .srt junto</option></select></div>
+            <div class="reveal" id="settings-subs-reveal"><div>
+              <div class="row" id="settings-subs-extra"><span class="rtile"><svg class="i"><use href="#i-globe"/></svg></span><div class="rt"><span>Idiomas</span><small>separados por vírgula</small></div><input type="text" class="inp inp-sm mono" id="settings-subs-langs" placeholder="pt-BR,pt,en" style="width:170px" aria-label="Idiomas das legendas"></div>
+              <div class="row" id="settings-subs-auto-row"><span class="rtile"><svg class="i"><use href="#i-zap"/></svg></span><div class="rt"><span>Aceitar legendas automáticas</span><small>Geradas por IA, usadas quando não houver legenda oficial</small></div><label class="switch-sm"><input type="checkbox" id="settings-subs-auto" checked aria-label="Legendas automáticas"><span class="slider"></span></label></div>
+            </div></div>
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-skip"/></svg></span><div class="rt"><span>SponsorBlock</span><small>Pula trechos marcados pela comunidade, só YouTube</small></div>
+              <select id="settings-sponsorblock" class="sel sel-sm" aria-label="SponsorBlock"><option value="off">Não pular nada</option><option value="sponsor">Só publicidade</option><option value="all">Publicidade, intro, fim e autopromoção</option></select></div>
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-list"/></svg></span><div class="rt"><span>Gravar capítulos e informações</span><small>Capítulos, título e canal dentro do arquivo</small></div><label class="switch-sm"><input type="checkbox" id="settings-embed-chapters" checked aria-label="Gravar capítulos"><span class="slider"></span></label></div>
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-image"/></svg></span><div class="rt"><span>Embutir miniatura no vídeo</span><small>Salva a capa oficial dentro dos metadados do arquivo MP4/MKV</small></div><label class="switch-sm"><input type="checkbox" id="settings-embed-thumbnail" checked aria-label="Embutir miniatura no vídeo"><span class="slider"></span></label></div>
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-file"/></svg></span><div class="rt"><span>Nome do arquivo</span><small class="mono" id="settings-tpl-preview"></small></div>
+              <select id="settings-output-template" class="sel sel-sm" aria-label="Nome do arquivo"><option value="%(title)s">Título do vídeo</option><option value="%(uploader)s - %(title)s">Canal - Título</option><option value="%(upload_date)s - %(title)s">Data - Título</option><option value="%(title)s [%(id)s]">Título [id]</option></select></div>
+          </div>
+          <p class="note">Incluir o id no nome evita que dois vídeos de mesmo título gravem por cima um do outro. O SponsorBlock recorta o arquivo depois de baixar, então deixa o download um pouco mais demorado. Legendas embutidas dependem do vídeo ter legenda — quando não tem, o download segue normal.</p>
+        </div>
+
+        <!-- yt-dlp -->
+        <div class="card" id="cf-yt">
+          <div class="cardhead"><span class="tile"><svg class="i"><use href="#i-refresh"/></svg></span><div><h3>Atualizar yt-dlp</h3><p>Garante suporte aos últimos sites e formatos</p></div></div>
+          <p class="note" style="margin-top:12px">O app checa sozinho em segundo plano de vez em quando e avisa aqui quando tiver novidade.</p>
+          <p id="ytdlp-version-line" class="ver mono ytdlp-version-line">Checando a versão instalada...</p>
+          <p id="ytdlp-update-note" class="update-note hidden"></p>
+          <button id="btn-update-ytdlp" class="btn-ghost btn-sm" style="margin-top:12px">
+            <svg class="i"><use href="#i-refresh"/></svg>
+            Verificar Atualização
+          </button>
+          <pre id="update-log" class="log log-box hidden"></pre>
+        </div>
+
+        <!-- Extensão -->
+        <div class="card" id="cf-ext">
+          <div class="cardhead"><span class="tile"><svg class="i"><use href="#i-puzzle"/></svg></span><div><h3>Extensão do navegador</h3><p>Botão nos sites e login do YouTube</p></div></div>
+          <p class="note" style="margin:12px 0 16px">Coloca um botão no YouTube, TikTok, X/Twitter, Instagram e Spotify pra mandar o download direto pro app. É por ela também que o login funciona: na página do youtube.com aparece um botão roxo "Conectar ao app" fixo no canto — ele lê os cookies do YouTube/Google direto do seu navegador já logado e manda pro app, sem o app precisar tocar no perfil do navegador. Funciona em qualquer navegador baseado em Chromium (Chrome, Edge, Brave, Opera...) e também tem uma versão pra Firefox. Ainda não está nas lojas — instale manualmente:</p>
+          <div class="seg" id="ext-seg">
+            <input type="radio" name="ext" id="ext-c" value="chromium" checked><label for="ext-c">Chrome · Edge · Brave · Opera</label>
+            <input type="radio" name="ext" id="ext-f" value="firefox"><label for="ext-f">Firefox</label>
+          </div>
+          <div id="ext-chromium">
+            <ol class="steps">
+              <li><span class="n">1</span><span>Clique em <b>"Abrir pasta da extensão"</b> abaixo.</span></li>
+              <li><span class="n">2</span><span>Acesse <code data-copy="chrome://extensions">chrome://extensions</code> no seu navegador (no Edge, <code data-copy="edge://extensions">edge://extensions</code>; nos outros o endereço é parecido).</span></li>
+              <li><span class="n">3</span><span>Ative o <b>"Modo do desenvolvedor"</b> (canto superior direito).</span></li>
+              <li><span class="n">4</span><span>Clique em <b>"Carregar sem compactação"</b> e selecione a pasta que abriu no passo 1.</span></li>
+              <li><span class="n">5</span><span>Pronto — o botão já aparece nos vídeos do YouTube. No primeiro clique, o navegador pergunta se pode abrir o app: marque <b>"sempre permitir"</b>.</span></li>
+            </ol>
+            <button id="btn-open-extension-folder" class="btn-ghost btn-sm"><svg class="i"><use href="#i-folder"/></svg>Abrir pasta da extensão</button>
+          </div>
+          <div id="ext-firefox" hidden>
+            <p class="note" style="margin:16px 0 0">O Firefox não entende extensões feitas pro Chrome, então é uma versão à parte:</p>
+            <ol class="steps">
+              <li><span class="n">1</span><span>Clique em <b>"Abrir pasta da extensão (Firefox)"</b> abaixo.</span></li>
+              <li><span class="n">2</span><span>No Firefox, acesse <code data-copy="about:debugging#/runtime/this-firefox">about:debugging#/runtime/this-firefox</code> e clique em <b>"Carregar extensão temporária..."</b>.</span></li>
+              <li><span class="n">3</span><span>Selecione o arquivo <code>manifest.json</code> dentro da pasta que abriu no passo 1.</span></li>
+            </ol>
+            <p class="note" style="margin:0 0 14px">Assim carregada, o Firefox some com a extensão ao fechar — é preciso repetir a cada sessão. Pra instalar de forma permanente, veja o <code>README.md</code> dentro da pasta da extensão (é preciso assinar o pacote pela Mozilla, gratuito, em poucos minutos).</p>
+            <button id="btn-open-extension-folder-firefox" class="btn-ghost btn-sm"><svg class="i"><use href="#i-folder"/></svg>Abrir pasta da extensão (Firefox)</button>
+          </div>
+        </div>
+
+        <!-- Sobre -->
+        <div class="card" id="cf-about">
+          <div class="about"><span class="dot lg"><svg class="i"><use href="#i-download"/></svg></span><div><p class="wordmark sm"><b>gameshmm</b><span>downloader</span></p><p class="by mono" id="app-version-label">Powered by yt-dlp</p></div></div>
+          <p class="note" style="margin-top:14px">Baixe vídeos e áudios de YouTube, Spotify, TikTok, Instagram, X, Twitch, SoundCloud, Reddit, Vimeo e mais de 1000 sites suportados pelo yt-dlp.</p>
+        </div>
+
+        <!-- Barra "alterações não salvas" -->
+        <div class="savebar" id="savebar" role="status" aria-live="polite">
+          <i></i><span>Você tem alterações não salvas</span>
+          <button id="btn-save-settings" class="btn-primary">Salvar</button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="renderer.js"></script>
+  <script src="ui-fx.js"></script>
+</body>
+</html>

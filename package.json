@@ -1,0 +1,77 @@
+{
+  "name": "gameshmm-downloader",
+  "version": "2.14.0",
+  "description": "gameshmm downloader — YouTube, Spotify, TikTok, Instagram, X, Twitch e mais de 1000 sites",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "node generate-icon.js",
+    "pack": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --dir --win",
+    "build": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win",
+    "release": "node scripts/generate-release-notes.js && set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win --publish always -c.releaseInfo.releaseNotesFile=release-notes.tmp.md && node scripts/update-release-notes.js"
+  },
+  "author": "gameshmm",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^41.10.7",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "ffmpeg-static": "^5.3.0",
+    "youtube-dl-exec": "^3.1.17"
+  },
+  "build": {
+    "appId": "com.gameshmm.downloader",
+    "productName": "gameshmm downloader",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "index.css",
+      "ui-fx.js",
+      "CHANGELOG.md",
+      "assets/**",
+      "node_modules/**/*"
+    ],
+    "icon": "assets/icon.ico",
+    "asarUnpack": [
+      "**/node_modules/youtube-dl-exec/bin/*",
+      "**/node_modules/ffmpeg-static/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "extension",
+        "to": "extension"
+      },
+      {
+        "from": "extension-firefox",
+        "to": "extension-firefox"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "gameshmm-downloader-setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "gameshmm downloader",
+      "installerLanguages": [
+        "pt_BR",
+        "en"
+      ],
+      "language": "1046"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "gameshmm",
+      "repo": "gameshmm-downloader",
+      "releaseType": "release"
+    }
+  }
+}

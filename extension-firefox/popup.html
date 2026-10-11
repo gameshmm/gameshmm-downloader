@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    width: 250px;
+    background: radial-gradient(120% 80% at 0% 0%, rgba(181,123,255,0.16), transparent 60%), #0f0d1a;
+    color: #f2f2f2;
+    font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .wrap { padding: 14px; }
+  h1 {
+    font-size: 13px;
+    font-weight: 700;
+    margin: 0 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  h1 img { width: 20px; height: 20px; border-radius: 6px; box-shadow: 0 4px 12px -4px rgba(181,123,255,0.7); }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .row span { font-size: 12.5px; line-height: 1.35; }
+  .switch { position: relative; display: inline-block; width: 34px; height: 20px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; cursor: pointer;
+    background: rgba(255,255,255,0.18); border-radius: 999px; transition: 0.2s;
+  }
+  .slider::before {
+    content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px;
+    background: #fff; border-radius: 50%; transition: 0.15s;
+  }
+  input:checked + .slider { background: linear-gradient(135deg, #b57bff, #7a8cff); box-shadow: 0 0 12px -2px rgba(181,123,255,0.6); }
+  input:checked + .slider::before { transform: translateX(14px); }
+  .hint { font-size: 11px; color: rgba(255,255,255,0.5); line-height: 1.5; margin: 10px 0 0; }
+  .login-block { padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.08); }
+  .login-block > span { font-size: 12.5px; display: block; margin-bottom: 6px; font-weight: 600; }
+  .login-block .hint { margin: 0; }
+  .login-block .hint b { color: #b9a6ff; }
+  .btn-link {
+    background: none; border: none; padding: 0; margin-top: 8px;
+    color: #b9a6ff; font-size: 11px; font-weight: 600; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px; font-family: inherit;
+  }
+  .btn-link:hover { color: #d5c9ff; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1><img src="icons/icon48.png" alt=""> gameshmm downloader</h1>
+    <div class="row">
+      <span>Mostrar botão de download no YouTube</span>
+      <label class="switch">
+        <input type="checkbox" id="toggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p class="hint">Quando ativado, aparece um botão pequeno no canto do vídeo pra mandar o download direto pro app. Dá pra remover clicando no "✕" do próprio botão também — isso desativa a mesma opção aqui.</p>
+    <div class="login-block">
+      <span>Login do YouTube no app</span>
+      <p class="hint">Não dá pra conectar por aqui (o Chrome não deixa abrir o app a partir do popup da extensão). Vá até uma página do <b>youtube.com</b> — vai aparecer um botão roxo <b>"Conectar ao app"</b> fixo no canto inferior direito da tela. Clique nele. Depois de conectar, o botão some sozinho da página.</p>
+      <button id="btn-reset-login" class="btn-link">Desconectei no app — mostrar o botão de novo</button>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

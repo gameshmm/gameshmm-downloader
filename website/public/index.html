@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>gameshmm downloader — baixe vídeos e músicas de +1000 sites</title>
+  <meta name="description" content="Baixe vídeos e áudios do YouTube, Spotify, TikTok, Instagram, X/Twitter, Twitch, SoundCloud e mais de 1000 sites. App gratuito para Windows, com conversor de mídia e extensão de navegador.">
+  <meta name="theme-color" content="#0f0d1a">
+  <link rel="canonical" href="https://downloader.gameshmm.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://downloader.gameshmm.com/">
+  <meta property="og:title" content="gameshmm downloader — baixe vídeos e músicas de +1000 sites">
+  <meta property="og:description" content="YouTube, Spotify, TikTok, Instagram, X/Twitter, Twitch, SoundCloud e mais de 1000 sites. App gratuito para Windows.">
+  <meta property="og:image" content="https://downloader.gameshmm.com/assets/icon.png">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" type="image/png" href="assets/icon.png">
+  <link rel="preload" href="assets/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bg-effects" aria-hidden="true"></div>
+
+  <!-- ── Header ── -->
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="header-brand" href="#" aria-label="gameshmm downloader">
+        <span class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="lg1" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#b57bff"/>
+                <stop offset="100%" stop-color="#7a8cff"/>
+              </linearGradient>
+            </defs>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="url(#lg1)" stroke-width="2" stroke-linecap="round"/>
+            <polyline points="7 10 12 15 17 10" stroke="url(#lg1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="12" y1="15" x2="12" y2="3" stroke="url(#lg1)" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span class="brand-name"><span class="grad">gameshmm</span> downloader</span>
+      </a>
+      <nav class="site-nav">
+        <a href="#recursos">Recursos</a>
+        <a href="#como">Como funciona</a>
+        <a href="#novidades">Novidades</a>
+        <a href="#download" class="btn-nav-cta">Baixar app</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- ── Hero ── -->
+    <section class="hero">
+      <div class="wrap hero-inner">
+        <span class="chip-green">100% gratuito</span>
+        <h1>Baixe vídeos e músicas de <span class="grad">+1000 sites</span> em poucos cliques</h1>
+        <p class="hero-sub">
+          YouTube, Spotify, TikTok, Instagram, X/Twitter, Twitch, SoundCloud e muito mais.
+          App para Windows, com conversor de mídia embutido e extensão de navegador —
+          sem anúncios, sem enrolação.
+        </p>
+        <div class="hero-cta">
+          <a id="btn-download-main" href="https://github.com/gameshmm/gameshmm-downloader/releases/latest" class="btn-primary" target="_blank" rel="noopener">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Baixar para Windows
+            <span id="btn-version" class="chip-inline hidden"></span>
+          </a>
+          <a href="#recursos" class="btn-secondary">Ver recursos</a>
+        </div>
+        <p class="hero-note">Windows 10/11 · instalador .exe · atualizações automáticas</p>
+
+        <!-- Demonstração do app: a cor muda de plataforma sozinha (script.js) -->
+        <div class="mock" aria-hidden="true">
+          <div class="mock-bar"><i></i><i></i><i></i></div>
+          <div class="mock-tabs"><span class="on">Download</span><span>Converter</span><span>Fila</span><span>Histórico</span><span>Config</span></div>
+          <div class="mock-field"><span id="mock-url">https://www.youtube.com/watch?v=dQw4w9WgXcQ</span><b id="mock-chip">YouTube</b></div>
+          <div class="mock-media">
+            <div class="mock-thumb"></div>
+            <div><strong id="mock-title">Título do vídeo</strong><small>12:34 · 1080p</small></div>
+          </div>
+          <div class="mock-prog"><i></i></div>
+          <div class="mock-stat"><span>Baixando…</span><span>8,4 MiB/s</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Plataformas ── -->
+    <section id="plataformas" class="section">
+      <div class="wrap">
+        <h2 class="section-title">Funciona com os sites que você já usa</h2>
+        <p class="section-sub">Passe o mouse: o app também muda de cor conforme o site do link.</p>
+        <div class="platform-grid">
+          <div class="platform-chip" data-h="25">YouTube</div>
+          <div class="platform-chip" data-h="150">Spotify</div>
+          <div class="platform-chip" data-h="355">TikTok</div>
+          <div class="platform-chip" data-h="8">Instagram</div>
+          <div class="platform-chip" data-h="245">X / Twitter</div>
+          <div class="platform-chip" data-h="255">Facebook</div>
+          <div class="platform-chip" data-h="295">Twitch</div>
+          <div class="platform-chip" data-h="45">SoundCloud</div>
+          <div class="platform-chip" data-h="38">Reddit</div>
+          <div class="platform-chip" data-h="215">Vimeo</div>
+          <div class="platform-chip" data-h="262">Dailymotion</div>
+          <div class="platform-chip more">+1000 outros</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Recursos ── -->
+    <section id="recursos" class="section">
+      <div class="wrap">
+        <h2 class="section-title">Tudo o que você precisa, num só app</h2>
+        <p class="section-sub">Construído com Electron + yt-dlp, direto ao ponto.</p>
+        <div class="features-grid">
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <h3>Download em vídeo ou áudio</h3>
+            <p>Escolha o formato e a qualidade — inclusive MP3 com capa do álbum e metadados embutidos, prontos pro seu player.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+            </div>
+            <h3>Conversor de mídia</h3>
+            <p>Converta entre MP4, MKV, WebM, AVI, MOV e codecs H.264/H.265/VP9/AV1, ou extraia áudio em MP3, WAV, FLAC, AAC e OGG. Dá pra cortar por tempo e mirar num tamanho de arquivo alvo.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <h3>Aceleração por GPU</h3>
+            <p>Detecta placas Nvidia (NVENC), AMD (AMF) e Intel (QSV) automaticamente e converte mais rápido usando a GPU — sem configurar nada.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            </div>
+            <h3>Extensão de navegador</h3>
+            <p>Um botão "Baixar" aparece direto no YouTube, TikTok, X/Twitter, Instagram e Spotify — manda o link pro app sem copiar e colar. Funciona em Chrome, Edge, Brave, Firefox e outros navegadores.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+            </div>
+            <h3>Atualizações automáticas</h3>
+            <p>O app verifica, baixa e instala novas versões sozinho. Você abre e já está na versão mais recente, sem precisar baixar instalador nenhum de novo.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </div>
+            <h3>Detecção de link copiado</h3>
+            <p>Copiou um link suportado? O app avisa e oferece colar e buscar na hora. Dá pra desativar em Configurações se preferir.</p>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Como funciona ── -->
+    <section id="como" class="section">
+      <div class="wrap">
+        <h2 class="section-title">Como funciona</h2>
+        <div class="steps-grid">
+          <div class="step-card">
+            <span class="step-num">1</span>
+            <h3>Cole o link</h3>
+            <p>Cole a URL do vídeo, música, playlist ou perfil — ou use a extensão pra mandar direto do navegador.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">2</span>
+            <h3>Escolha o formato</h3>
+            <p>Selecione qualidade, formato de vídeo ou áudio, e a pasta de destino.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">3</span>
+            <h3>Baixe</h3>
+            <p>Pronto. O arquivo já sai convertido e com metadados, do jeito certo.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Changelog / novidades ── -->
+    <section id="novidades" class="section">
+      <div class="wrap">
+        <h2 class="section-title">Últimas novidades</h2>
+        <div id="changelog-box" class="changelog-box">
+          <p class="dim">Carregando changelog do GitHub…</p>
+        </div>
+        <p class="section-sub"><a href="https://github.com/gameshmm/gameshmm-downloader/releases" target="_blank" rel="noopener">Ver histórico completo no GitHub →</a></p>
+      </div>
+    </section>
+
+    <!-- ── CTA de download ── -->
+    <section id="download" class="section download-section">
+      <div class="wrap download-inner">
+        <h2>Pronto pra começar?</h2>
+        <p>Baixe agora, de graça, direto do GitHub.</p>
+        <a id="btn-download-footer" href="https://github.com/gameshmm/gameshmm-downloader/releases/latest" class="btn-primary btn-lg" target="_blank" rel="noopener">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Baixar gameshmm downloader
+        </a>
+        <p class="hero-note">MIT license · sem conta, sem cadastro, sem anúncio</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>© <span id="year"></span> gameshmm downloader — MIT License</span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
