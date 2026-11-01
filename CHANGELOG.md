@@ -4,6 +4,12 @@ Formato: cada versão nova adiciona uma seção `## versão - título curto` com
 A seção da versão instalada aparece automaticamente para o usuário na primeira vez que ele abre
 essa versão (ver `getChangelogUpdateIfAny` em `main.js`).
 
+## 2.14.1 - Edição Especial de Halloween 🎃
+
+- **Tema Festivo de Halloween**: o app ganha um visual temático temporário em laranja abóbora, roxo bruxa e verde espectral, com efeito cósmico e sutis decorações animadas de Halloween.
+- **Temporário e Automático**: ativo automaticamente durante a temporada de Halloween (de 24 de outubro a 2 de novembro) e volta ao normal sozinho após o período, sem você precisar mexer em nada.
+- **Controle em Configurações**: novo interruptor em **Configurações → Aparência** para alternar o tema de Halloween a qualquer momento ou manter no modo automático.
+
 ## 2.14.0 - FFmpeg resiliente, miniatura em vídeos, ação ao concluir fila e novidades no histórico
 
 - **FFmpeg resiliente com detecção automática**: o app agora detecta automaticamente o FFmpeg do sistema (instalado no PATH) ou cópia personalizada em `%APPDATA%\gameshmm-downloader\bin` caso o binário embutido seja excluído ou bloqueado pelo antivírus. O card de Status do sistema agora exibe a versão real do FFmpeg instalada e sua procedência.

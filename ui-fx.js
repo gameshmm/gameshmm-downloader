@@ -13,6 +13,24 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch { /* sem storage: só não lembra */ } },
   };
 
+  // byId já definido no topo
+
+  /* ── Tema Especial Temporário: Halloween ──────────────────────── */
+  const HALLOWEEN_HUE = 42; // Laranja Jack-o'-lantern
+  function isHalloweenSeason() {
+    const now = new Date();
+    const m = now.getMonth(); // 9 = Outubro, 10 = Novembro
+    const d = now.getDate();
+    return (m === 9 && d >= 24) || (m === 10 && d <= 2);
+  }
+  function isHalloweenActive() {
+    const mode = store.get('gdl.halloween', 'auto');
+    if (mode === 'off') return false;
+    if (mode === 'on') return true;
+    return isHalloweenSeason();
+  }
+  let halloweenActive = isHalloweenActive();
+
   /* ── Preferências ─────────────────────────────────────────────── */
   const DEFAULT_H = 300;
   const prefs = {
@@ -32,7 +50,8 @@
   let platHue = null;
   let onDownloadTab = true;   // a cor da plataforma só tinge a aba Download (é onde o link vive)
   function applyHue() {
-    const target = prefs.plat && platHue != null && onDownloadTab ? platHue : prefs.hue;
+    const base = halloweenActive && prefs.hue === DEFAULT_H ? HALLOWEEN_HUE : prefs.hue;
+    const target = prefs.plat && platHue != null && onDownloadTab ? platHue : base;
     const delta = ((target - cur + 540) % 360) - 180;
     cur += delta;
     root.style.setProperty('--ph', String(cur));
@@ -44,6 +63,37 @@
   }
   root.style.setProperty('--h', String(prefs.hue));
   root.style.setProperty('--ph', String(prefs.hue));
+  function syncHalloween() {
+    halloweenActive = isHalloweenActive();
+    if (halloweenActive) {
+      root.setAttribute('data-halloween', 'on');
+      if (prefs.hue === DEFAULT_H) {
+        root.style.setProperty('--h', String(HALLOWEEN_HUE));
+      }
+    } else {
+      root.removeAttribute('data-halloween');
+      root.style.setProperty('--h', String(prefs.hue));
+    }
+    applyHue();
+
+    const toggle = byId('ui-halloween-toggle');
+    if (toggle) toggle.checked = halloweenActive;
+    const hint = byId('ui-halloween-hint');
+    if (hint) {
+      const mode = store.get('gdl.halloween', 'auto');
+      if (mode === 'on') {
+        hint.textContent = 'Ativado manualmente. Desmarque para voltar ao modo normal.';
+      } else if (mode === 'off') {
+        hint.textContent = 'Desativado. Marque para reativar o tema festivo.';
+      } else {
+        hint.textContent = isHalloweenSeason()
+          ? 'Ativo temporariamente (24 out – 02 nov). Volta ao normal sozinho depois!'
+          : 'Desativado fora da temporada. Ativa sozinho no próximo Halloween.';
+      }
+    }
+  }
+  syncHalloween();
+
 
   const urlInput = $('#url-input');
   let lastUrl = null;

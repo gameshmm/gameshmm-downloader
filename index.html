@@ -46,11 +46,20 @@
   <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></symbol>
+  <symbol id="i-pumpkin" viewBox="0 0 24 24"><path d="M12 2c.4 1.2.2 2.3-.5 3.2M7 6c-2.8 1.5-4.5 4.5-4.5 8 0 5 4.3 8 9.5 8s9.5-3 9.5-8c0-3.5-1.7-6.5-4.5-8"/><ellipse cx="12" cy="14" rx="4.2" ry="7.5"/><path d="M9.5 12l.8 1.2-.8 1.2M14.5 12l-.8 1.2.8 1.2M9.5 17c1.5 1 3.5 1 5 0"/></symbol>
 </svg>
   <div class="bg-effects">
     <div class="blob b1"></div>
     <div class="blob b2"></div>
-    <div class="blob b3"></div>
+        <div class="blob b3"></div>
+    <div class="halloween-decor" aria-hidden="true">
+      <div class="halloween-web top-left"></div>
+      <div class="halloween-web top-right"></div>
+      <div class="spooky-item b1">🦇</div>
+      <div class="spooky-item b2">🦇</div>
+      <div class="spooky-item b3">🎃</div>
+      <div class="spooky-item g1">👻</div>
+    </div>
   </div>
 
   <!-- Toasts -->
@@ -122,7 +131,7 @@
             <line x1="12" y1="15" x2="12" y2="3" stroke="url(#lg1)" stroke-width="2" stroke-linecap="round"/>
           </svg>
         </div>
-        <h1 class="brand-name"><span class="grad">gameshmm</span> downloader</h1>
+        <h1 class="brand-name"><span class="grad">gameshmm</span> downloader<span class="brand-halloween" aria-hidden="true" title="Tema Especial de Halloween 🎃">🎃</span></h1>
       </div>
       <div class="login-strip">
         <span id="login-status" class="login-badge red">
@@ -786,6 +795,14 @@
             <button type="button" class="lnk hidden" id="ui-hue-reset" style="margin-top:12px">Restaurar roxo padrão</button>
           </div>
           <div class="rows">
+            <div class="row row-halloween">
+              <span class="rtile" style="background:oklch(.72 .23 45 / .18);color:oklch(.78 .2 48)"><svg class="i"><use href="#i-pumpkin"/></svg></span>
+              <div class="rt">
+                <span>Tema de Halloween <span class="pill-halloween">Temporário</span></span>
+                <small id="ui-halloween-hint">Ativado automaticamente para o Halloween (desliga sozinho após 2 de nov)</small>
+              </div>
+              <label class="switch-sm"><input type="checkbox" id="ui-halloween-toggle" aria-label="Tema temporário de Halloween"><span class="slider"></span></label>
+            </div>
             <div class="row"><span class="rtile"><svg class="i"><use href="#i-globe"/></svg></span><div class="rt"><span>Cor por plataforma</span><small>Ao colar um link, o fundo e os brilhos assumem a cor do YouTube, Spotify, TikTok… Desligado, tudo fica na cor de destaque.</small></div><label class="switch-sm"><input type="checkbox" id="ui-plat-tint" checked aria-label="Cor por plataforma"><span class="slider"></span></label></div>
             <div class="row"><span class="rtile"><svg class="i"><use href="#i-zap"/></svg></span><div class="rt"><span>Fundo animado</span><small>Malha de gradiente em movimento lento</small></div><label class="switch-sm"><input type="checkbox" id="ui-bg-anim" checked aria-label="Fundo animado"><span class="slider"></span></label></div>
             <div class="row"><span class="rtile"><svg class="i"><use href="#i-pause"/></svg></span><div class="rt"><span>Reduzir movimento</span><small>Desliga animações e transições (o app também respeita a opção do Windows)</small></div><label class="switch-sm"><input type="checkbox" id="ui-reduce" aria-label="Reduzir movimento"><span class="slider"></span></label></div>
