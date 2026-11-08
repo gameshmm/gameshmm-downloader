@@ -4,6 +4,14 @@ Formato: cada versão nova adiciona uma seção `## versão - título curto` com
 A seção da versão instalada aparece automaticamente para o usuário na primeira vez que ele abre
 essa versão (ver `getChangelogUpdateIfAny` em `main.js`).
 
+## 2.15.0 - Seleção de Codec de Vídeo (H.264, VP9, AV1)
+
+- **Escolha opcional de codec de vídeo**: adicionado seletor de codec ao lado da escolha de contêiner (MP4/MKV) no card de download. Por padrão o app continua no modo "Auto · melhor" (padrão do site), mas agora você pode alternar facilmente para "H.264 · compatível" (AVC), "VP9" ou "AV1" quando precisar.
+- **Maior compatibilidade (H.264)**: downloads em H.264 utilizam fluxos AVC nativos sem perda de qualidade quando disponíveis, garantindo que o arquivo funcione diretamente em players mais antigos, televisões e softwares de edição como Adobe Premiere e DaVinci Resolve.
+- **Fallback resiliente**: se a resolução escolhida não tiver o codec desejado (ex: vídeos 4K que não possuem H.264 no YouTube), o app baixa automaticamente a melhor opção disponível sem quebrar o download.
+- **Codec preferido em Configurações**: nova opção em **Configurações → Opções de download** para definir o codec preferido padrão de todos os downloads (vídeos individuais, fila e playlists).
+- **Identificação no modal "Ver Formatos"**: ao inspecionar todas as faixas disponíveis em um vídeo, o modal agora exibe badges indicando claramente o codec de cada fluxo (H.264, VP9, AV1, H.265).
+
 ## 2.14.1 - Edição Especial de Halloween 🎃
 
 - **Tema Festivo de Halloween**: o app ganha um visual temático temporário em laranja abóbora, roxo bruxa e verde espectral, com efeito cósmico e sutis decorações animadas de Halloween.

@@ -1432,12 +1432,33 @@ ipcMain.handle('get-formats', async (_, { url }) => {
       if (!NEEDS_LOGIN_RE.test(msg) || !applyCookieOpts(opts)) throw err;
       info = await youtubedl(url, opts);
     }
+    function vcodecFamily(vcodec) {
+      if (!vcodec || vcodec === 'none') return '';
+      if (/^(avc1|h264)/i.test(vcodec)) return 'H.264';
+      if (/^(vp9|vp09)/i.test(vcodec)) return 'VP9';
+      if (/^(av01|av1)/i.test(vcodec)) return 'AV1';
+      if (/^(hevc|h265|hev1)/i.test(vcodec)) return 'H.265';
+      return vcodec.split('.')[0] || '';
+    }
     const seen = new Set();
     const formats = (info.formats || [])
       .filter(f => f.vcodec !== 'none' && f.height)
       .sort((a, b) => (b.height || 0) - (a.height || 0))
-      .filter(f => { if (seen.has(f.height)) return false; seen.add(f.height); return true; })
-      .map(f => ({ id: f.format_id, ext: f.ext, height: f.height, fps: f.fps, note: f.format_note, size: f.filesize || f.filesize_approx || null }));
+      .filter(f => {
+        const key = `${f.height}_${vcodecFamily(f.vcodec)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map(f => ({
+        id: f.format_id,
+        ext: f.ext,
+        height: f.height,
+        fps: f.fps,
+        vcodec: vcodecFamily(f.vcodec),
+        note: f.format_note,
+        size: f.filesize || f.filesize_approx || null
+      }));
     // Tamanho do melhor áudio (m4a de preferência): entra na estimativa do arquivo final.
     const audios = (info.formats || []).filter(f => f.acodec && f.acodec !== 'none' && f.vcodec === 'none' && (f.filesize || f.filesize_approx));
     const bestAudio = audios.filter(f => f.ext === 'm4a').sort((a, b) => (b.abr || 0) - (a.abr || 0))[0] || audios.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
@@ -1497,7 +1518,7 @@ ipcMain.handle('get-playlist-info', async (_, data) => {
 });
 
 // ── Download Video ────────────────────────────────────────────────────────────
-ipcMain.handle('download-video', async (event, { url, format, quality, useCookies, savePath: provided, downloadId, formatId, title, accelerate, container, audioBitrate }) => {
+ipcMain.handle('download-video', async (event, { url, format, quality, useCookies, savePath: provided, downloadId, formatId, title, accelerate, container, audioBitrate, videoCodec }) => {
   if (!isSafeMediaUrl(url)) return BAD_URL;
   try {
     let savePath = provided;
@@ -1521,6 +1542,9 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
     // Contêiner do vídeo: mp4 (padrão, toca em qualquer lugar) ou mkv (sem limite de codec:
     // deixa o yt-dlp pegar VP9/AV1 na resolução máxima).
     const outContainer = container === 'mkv' ? 'mkv' : 'mp4';
+    const effectiveCodec = (videoCodec && videoCodec !== 'auto')
+      ? videoCodec
+      : (dlSettings.defaultVideoCodec && dlSettings.defaultVideoCodec !== 'auto' ? dlSettings.defaultVideoCodec : 'auto');
 
     const buildArgs = (fmtOverride, forceCookies) => {
       // "--" fecha a lista de opções: tudo depois dele é tratado como endereço,
@@ -1530,6 +1554,9 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
       if (useCookies || forceCookies) pushCookieArgs(args);
       if (fmtOverride) {
         args.push('--format', fmtOverride, '--output', outTemplate, '--merge-output-format', outContainer);
+        if (effectiveCodec !== 'auto') {
+          args.push('-S', `vcodec:${effectiveCodec}`);
+        }
         pushVideoExtraArgs(args, dlSettings);
       } else if (formatId) {
         args.push('--format', formatId, '--output', outTemplate, '--merge-output-format', outContainer);
@@ -1542,9 +1569,21 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
         pushSponsorBlockArgs(args, dlSettings);
       } else {
         const capH = quality === 'best' || !quality ? '' : `[height<=${quality}]`;
-        const fmt = outContainer === 'mkv'
-          ? `bestvideo${capH}+bestaudio/best${capH}/best`
-          : `bestvideo[ext=mp4]${capH}+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+        let fmt;
+        if (effectiveCodec === 'h264') {
+          fmt = `bestvideo[vcodec^=avc1]${capH}+bestaudio[ext=m4a]/bestvideo[vcodec^=h264]${capH}+bestaudio/bestvideo[ext=mp4]${capH}+bestaudio[ext=m4a]/bestvideo${capH}+bestaudio/best`;
+          args.push('-S', 'vcodec:h264');
+        } else if (effectiveCodec === 'vp9') {
+          fmt = `bestvideo[vcodec^=vp9]${capH}+bestaudio/bestvideo[vcodec^=vp09]${capH}+bestaudio/bestvideo${capH}+bestaudio/best`;
+          args.push('-S', 'vcodec:vp9');
+        } else if (effectiveCodec === 'av1') {
+          fmt = `bestvideo[vcodec^=av01]${capH}+bestaudio/bestvideo${capH}+bestaudio/best`;
+          args.push('-S', 'vcodec:av1');
+        } else {
+          fmt = outContainer === 'mkv'
+            ? `bestvideo${capH}+bestaudio/best${capH}/best`
+            : `bestvideo[ext=mp4]${capH}+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+        }
         args.push('--format', fmt, '--output', outTemplate, '--merge-output-format', outContainer);
         pushVideoExtraArgs(args, dlSettings);
       }
@@ -1671,7 +1710,7 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
 });
 
 // ── Download Playlist ─────────────────────────────────────────────────────────
-ipcMain.handle('download-playlist', async (event, { url, format, quality, useCookies, downloadId, concurrency = 3, selectedIndexes, accelerate }) => {
+ipcMain.handle('download-playlist', async (event, { url, format, quality, useCookies, downloadId, concurrency = 3, selectedIndexes, accelerate, videoCodec }) => {
   if (!isSafeMediaUrl(url)) return BAD_URL;
   try {
     const settings = loadSettings();
@@ -1705,6 +1744,9 @@ ipcMain.handle('download-playlist', async (event, { url, format, quality, useCoo
     const cookieAuth = useCookies ? getCookieAuth() : null;
 
     const plSettings = loadSettings();
+    const effectiveCodec = (videoCodec && videoCodec !== 'auto')
+      ? videoCodec
+      : (plSettings.defaultVideoCodec && plSettings.defaultVideoCodec !== 'auto' ? plSettings.defaultVideoCodec : 'auto');
     // Mesmo template configurado pelo usuário, com o número da posição na
     // frente pra playlist continuar na ordem certa dentro da pasta.
     const plTemplate = String(outputTemplate());
@@ -1716,10 +1758,27 @@ ipcMain.handle('download-playlist', async (event, { url, format, quality, useCoo
         pushSponsorBlockArgs(a, plSettings);
         return a;
       }
-      const fmt = fmtOverride || (quality === 'best'
-        ? 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-        : `bestvideo[ext=mp4][height<=${quality}]+bestaudio[ext=m4a]/best[ext=mp4]/best`);
-      const v = ['--format', fmt, '--output', prefix, '--merge-output-format', 'mp4'];
+      const capH = quality === 'best' || !quality ? '' : `[height<=${quality}]`;
+      let fmt;
+      const plSort = [];
+      if (fmtOverride) {
+        fmt = fmtOverride;
+        if (effectiveCodec !== 'auto') plSort.push('-S', `vcodec:${effectiveCodec}`);
+      } else if (effectiveCodec === 'h264') {
+        fmt = `bestvideo[vcodec^=avc1]${capH}+bestaudio[ext=m4a]/bestvideo[vcodec^=h264]${capH}+bestaudio/bestvideo[ext=mp4]${capH}+bestaudio[ext=m4a]/bestvideo${capH}+bestaudio/best`;
+        plSort.push('-S', 'vcodec:h264');
+      } else if (effectiveCodec === 'vp9') {
+        fmt = `bestvideo[vcodec^=vp9]${capH}+bestaudio/bestvideo[vcodec^=vp09]${capH}+bestaudio/bestvideo${capH}+bestaudio/best`;
+        plSort.push('-S', 'vcodec:vp9');
+      } else if (effectiveCodec === 'av1') {
+        fmt = `bestvideo[vcodec^=av01]${capH}+bestaudio/bestvideo${capH}+bestaudio/best`;
+        plSort.push('-S', 'vcodec:av1');
+      } else {
+        fmt = quality === 'best'
+          ? 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+          : `bestvideo[ext=mp4][height<=${quality}]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+      }
+      const v = ['--format', fmt, ...plSort, '--output', prefix, '--merge-output-format', 'mp4'];
       pushVideoExtraArgs(v, plSettings);
       return v;
     };

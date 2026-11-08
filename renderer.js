@@ -553,10 +553,12 @@ document.getElementById('btn-formats').addEventListener('click', () => {
   currentFormats.forEach(f => {
     const row = document.createElement('label');
     row.className = 'format-row';
+    const codecBadge = f.vcodec ? `<span class="dim" style="font-size:0.75rem;padding:2px 6px;border-radius:6px;background:oklch(1 0 0 / .08)">${f.vcodec}</span>` : '';
     row.innerHTML = `
       <input type="radio" name="fmt-pick" value="${f.id}">
       <strong>${f.height}p</strong>
       <span class="dim">${f.ext.toUpperCase()} · ${f.fps || 30}fps</span>
+      ${codecBadge}
       <span class="format-size">${fmtBytes(f.size)}</span>`;
     row.querySelector('input').addEventListener('change', () => {
       document.querySelectorAll('.format-row').forEach(r => r.classList.remove('selected'));
@@ -576,7 +578,7 @@ btnUseFormat.addEventListener('click', () => {
   selectedFormatId = chosenFmtId;
   const fmt = currentFormats.find(f => f.id === chosenFmtId);
   const label = document.getElementById('fmt-label');
-  label.textContent = fmt ? `${fmt.height}p ${fmt.ext.toUpperCase()}` : chosenFmtId;
+  label.textContent = fmt ? `${fmt.height}p ${fmt.ext.toUpperCase()}${fmt.vcodec ? ' · ' + fmt.vcodec : ''}` : chosenFmtId;
   label.classList.remove('hidden');
   document.getElementById('quality').value = 'best';
   document.getElementById('quality').dispatchEvent(new Event('quality-sync'));
@@ -593,6 +595,10 @@ function clearChosenFormat(reason) {
   if (reason) showToast(reason, 'info', 2600);
 }
 document.getElementById('quality').addEventListener('change', () => clearChosenFormat('Voltei pra qualidade automática — a resolução escolhida à mão foi descartada.'));
+document.getElementById('dl-vcodec')?.addEventListener('change', (e) => {
+  e.target.dataset.userChanged = 'true';
+  clearChosenFormat('Codec alterado — a resolução específica escolhida à mão foi descartada.');
+});
 document.getElementsByName('fmt').forEach(r => r.addEventListener('change', () => clearChosenFormat(null)));
 
 // ── Single download ───────────────────────────────────────────────────────────
@@ -637,6 +643,7 @@ btnDownload.addEventListener('click', async () => {
       format: getRadio('fmt'),
       quality: document.getElementById('quality').value,
       container: document.getElementById('dl-container')?.value || 'mp4',
+      videoCodec: document.getElementById('dl-vcodec')?.value || 'auto',
       audioBitrate: Number(document.getElementById('audio-quality-range')?.value) || 0,
       useCookies: lastUsedCookies,
       downloadId: dlId,
@@ -720,6 +727,7 @@ btnDlPlaylist.addEventListener('click', async () => {
       url: currentUrl,
       format: getRadio('pl-fmt'),
       quality: document.getElementById('pl-quality').value,
+      videoCodec: document.getElementById('dl-vcodec')?.value || 'auto',
       useCookies: lastUsedCookies,
       downloadId: dlId,
       concurrency: parseInt(document.getElementById('pl-concurrency')?.value || '3', 10),
@@ -1196,6 +1204,7 @@ document.getElementById('btn-add-queue').addEventListener('click', () => {
     id: uid(), url: currentUrl, format: getRadio('fmt'),
     quality: document.getElementById('quality').value,
     container: document.getElementById('dl-container')?.value || 'mp4',
+    videoCodec: document.getElementById('dl-vcodec')?.value || 'auto',
     title: document.getElementById('video-title').textContent, status: 'pending'
   });
   renderQueue();
@@ -1295,6 +1304,7 @@ async function runQueueWorker(pending, folder, doneRef) {
     try {
       const result = await window.electronAPI.downloadVideo({
         url: item.url, format: item.format, quality: item.quality, container: item.container,
+        videoCodec: item.videoCodec || 'auto',
         useCookies: false, downloadId: dlId, savePath: folder,
         accelerate: true, title: item.title
       });
@@ -1564,6 +1574,10 @@ async function loadSettingsUI() {
   settingsSponsorblock.value = s.sponsorblock || 'off';
   settingsEmbedChapters.checked = s.embedChapters !== false;
   if (settingsEmbedThumbnail) settingsEmbedThumbnail.checked = s.embedThumbnail !== false;
+  const settingsVideoCodec = document.getElementById('settings-video-codec');
+  if (settingsVideoCodec) settingsVideoCodec.value = s.defaultVideoCodec || 'auto';
+  const dlVcodec = document.getElementById('dl-vcodec');
+  if (dlVcodec && !dlVcodec.dataset.userChanged) dlVcodec.value = s.defaultVideoCodec || 'auto';
   // Um template salvo que não esteja na lista (versão futura, edição manual do
   // settings.json) vira uma opção a mais em vez de sumir da tela.
   const tpl = s.outputTemplate || '%(title)s';
@@ -1608,6 +1622,7 @@ document.getElementById('btn-save-settings').addEventListener('click', async () 
     sponsorblock: settingsSponsorblock.value,
     embedChapters: settingsEmbedChapters.checked,
     embedThumbnail: settingsEmbedThumbnail ? settingsEmbedThumbnail.checked : true,
+    defaultVideoCodec: document.getElementById('settings-video-codec')?.value || 'auto',
     embedMetadata: settingsEmbedChapters.checked,
     outputTemplate: settingsOutputTemplate.value,
   });

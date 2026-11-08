@@ -287,12 +287,23 @@
                     <option value="360">360p</option>
                   </select>
                 </div>
-                <div>
-                  <div class="lbl"><span>Contêiner</span></div>
-                  <select id="dl-container" class="sel" aria-label="Contêiner">
-                    <option value="mp4">MP4 · compatível</option>
-                    <option value="mkv">MKV · máxima qualidade</option>
-                  </select>
+                <div class="two-sub">
+                  <div>
+                    <div class="lbl"><span>Contêiner</span></div>
+                    <select id="dl-container" class="sel" aria-label="Contêiner">
+                      <option value="mp4">MP4 · compatível</option>
+                      <option value="mkv">MKV · flexível</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div class="lbl"><span>Codec</span></div>
+                    <select id="dl-vcodec" class="sel" aria-label="Codec de vídeo">
+                      <option value="auto" selected>Auto · melhor</option>
+                      <option value="h264">H.264 · compatível</option>
+                      <option value="vp9">VP9</option>
+                      <option value="av1">AV1</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -839,6 +850,8 @@
               <select id="settings-sponsorblock" class="sel sel-sm" aria-label="SponsorBlock"><option value="off">Não pular nada</option><option value="sponsor">Só publicidade</option><option value="all">Publicidade, intro, fim e autopromoção</option></select></div>
             <div class="row"><span class="rtile"><svg class="i"><use href="#i-list"/></svg></span><div class="rt"><span>Gravar capítulos e informações</span><small>Capítulos, título e canal dentro do arquivo</small></div><label class="switch-sm"><input type="checkbox" id="settings-embed-chapters" checked aria-label="Gravar capítulos"><span class="slider"></span></label></div>
             <div class="row"><span class="rtile"><svg class="i"><use href="#i-image"/></svg></span><div class="rt"><span>Embutir miniatura no vídeo</span><small>Salva a capa oficial dentro dos metadados do arquivo MP4/MKV</small></div><label class="switch-sm"><input type="checkbox" id="settings-embed-thumbnail" checked aria-label="Embutir miniatura no vídeo"><span class="slider"></span></label></div>
+            <div class="row"><span class="rtile"><svg class="i"><use href="#i-video"/></svg></span><div class="rt"><span>Codec de vídeo preferido</span><small>Auto usa o melhor disponível (muitas vezes AV1); H.264 tem maior compatibilidade</small></div>
+              <select id="settings-video-codec" class="sel sel-sm" aria-label="Codec de vídeo preferido"><option value="auto">Automático (Padrão)</option><option value="h264">H.264 / AVC (Mais compatível)</option><option value="vp9">VP9</option><option value="av1">AV1</option></select></div>
             <div class="row"><span class="rtile"><svg class="i"><use href="#i-file"/></svg></span><div class="rt"><span>Nome do arquivo</span><small class="mono" id="settings-tpl-preview"></small></div>
               <select id="settings-output-template" class="sel sel-sm" aria-label="Nome do arquivo"><option value="%(title)s">Título do vídeo</option><option value="%(uploader)s - %(title)s">Canal - Título</option><option value="%(upload_date)s - %(title)s">Data - Título</option><option value="%(title)s [%(id)s]">Título [id]</option></select></div>
           </div>

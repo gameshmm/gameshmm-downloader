@@ -630,6 +630,8 @@ kbd { font: 600 .75rem var(--mono); padding: 2px 7px; border-radius: 6px; backgr
 .q-sub .link-btn { margin-left: auto; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .two .sel { height: 46px; }
+.two-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+.two-sub .sel { height: 46px; }
 
 /* Controle segmentado com peça deslizante */
 .seg { --n: 2; position: relative; display: grid; grid-template-columns: repeat(var(--n), 1fr); padding: 4px; border-radius: 16px; background: oklch(0 0 0 / .32); border: 1px solid var(--card-border); }
@@ -763,7 +765,7 @@ input.inp[type="text"], input.inp[type="number"] { padding: 0 14px; }
 .sel-sm { height: 42px; min-width: 176px; font-size: .875rem; flex: none; }
 .sel-sm.sel-xs, .sel-xs { min-width: 0; }
 .sel-sm.sel-xs { min-width: 84px; }
-.two .sel, .grid3 .sel, .preset-row .sel { width: 100%; }
+.two .sel, .two-sub .sel, .grid3 .sel, .preset-row .sel { width: 100%; }
 
 .ta { flex: 1; width: 100%; min-height: 56px; max-height: 160px; resize: vertical; padding: 13px 16px; border-radius: 18px; border: 1px solid var(--card-border); background: oklch(0 0 0 / .32); color: var(--txt); font: 500 .9375rem/1.45 var(--sans); outline: 0; transition: border-color .25s, box-shadow .3s; field-sizing: content; }
 .ta:focus { border-color: oklch(.8 .16 var(--h) / .8); box-shadow: 0 0 0 4px oklch(.8 .16 var(--h) / .15); }
