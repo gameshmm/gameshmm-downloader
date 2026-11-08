@@ -91,3 +91,6 @@
 }
 .gdl-login-badge:hover { background: rgba(143, 115, 255, 0.98); }
 .gdl-login-badge .gdl-badge-icon { color: #fff; }
+
+.gdl-badge[data-state="sent"] { border-color: rgba(63, 215, 122, 0.72); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), 0 0 14px -4px rgba(63, 215, 122, 0.7); }
+.gdl-badge[data-state="warn"] { border-color: rgba(245, 158, 11, 0.78); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), 0 0 14px -4px rgba(245, 158, 11, 0.7); }

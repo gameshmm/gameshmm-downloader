@@ -313,9 +313,16 @@
                 <div class="ticks" aria-hidden="true"><span>128k</span><span>192k</span><span>256k</span><span>320k</span></div>
               </div>
 
+              <div id="audio-track-group" class="hidden">
+                <div class="lbl"><span>Faixa de áudio</span><b id="audio-track-count"></b></div>
+                <select id="dl-audiolang" class="sel" aria-label="Idioma da faixa de áudio">
+                  <option value="auto">Automático (padrão do vídeo)</option>
+                </select>
+              </div>
+
               <div class="toggles" id="dl-toggles">
                 <div class="row">
-                  <div class="rt"><span>Legendas</span><small>Baixa e embute quando existirem · idiomas em Config</small></div>
+                  <div class="rt"><span>Legendas</span><small id="dl-subs-hint">Baixa e embute quando existirem · idiomas em Config</small></div>
                   <label class="switch-sm"><input type="checkbox" id="dl-subs" aria-label="Legendas"><span class="slider"></span></label>
                 </div>
                 <div class="row">
@@ -349,6 +356,16 @@
                 <div class="stat"><small>Baixado</small><b id="dl-got">—</b></div>
               </div>
               <div class="prog-cta"><button type="button" id="dl-cancel-big" class="btn-ghost btn-sm">Cancelar</button></div>
+              <div id="dl-diag" class="diag-box hidden">
+                <div class="diag-actions">
+                  <button type="button" id="btn-dl-compat-retry" class="btn-primary btn-sm hidden"><svg class="i"><use href="#i-refresh"/></svg>Tentar em MP4 1080p compatível</button>
+                  <button type="button" id="dl-diag-copy" class="btn-ghost btn-sm hidden"><svg class="i"><use href="#i-copy"/></svg>Copiar diagnóstico</button>
+                </div>
+                <details id="dl-diag-details" class="diag-details hidden">
+                  <summary>Ver detalhes técnicos</summary>
+                  <pre id="dl-diag-pre" class="diag-pre mono"></pre>
+                </details>
+              </div>
             </div>
             <div id="dl-done" class="done" hidden>
               <div class="check"><svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27l8 8 15-17"/></svg></div>
@@ -485,6 +502,15 @@
               <div class="pbar-bg" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="spotify-dl-bar" class="pbar-fill pbar-spotify"></div></div>
               <p id="spotify-dl-text" class="dim"></p>
               <div id="spotify-slots" class="pl-slots" style="margin-top:8px"></div>
+              <div id="spotify-diag" class="diag-box hidden">
+                <div class="diag-actions">
+                  <button type="button" id="spotify-diag-copy" class="btn-ghost btn-sm hidden"><svg class="i"><use href="#i-copy"/></svg>Copiar diagnóstico</button>
+                </div>
+                <details id="spotify-diag-details" class="diag-details hidden">
+                  <summary>Ver detalhes técnicos</summary>
+                  <pre id="spotify-diag-pre" class="diag-pre mono"></pre>
+                </details>
+              </div>
             </div>
             <button id="btn-spotify-open" class="btn-open hidden">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -647,6 +673,15 @@
               <div class="stat"><small>Saída</small><b id="conv-out">—</b></div>
             </div>
             <div class="prog-cta"><button type="button" id="conv-cancel-big" class="btn-ghost btn-sm btn-danger-soft"><svg class="i"><use href="#i-x"/></svg>Cancelar</button></div>
+            <div id="conv-diag" class="diag-box hidden">
+              <div class="diag-actions">
+                <button type="button" id="conv-diag-copy" class="btn-ghost btn-sm hidden"><svg class="i"><use href="#i-copy"/></svg>Copiar diagnóstico</button>
+              </div>
+              <details id="conv-diag-details" class="diag-details hidden">
+                <summary>Ver detalhes técnicos</summary>
+                <pre id="conv-diag-pre" class="diag-pre mono"></pre>
+              </details>
+            </div>
           </div>
           <div id="conv-done" class="done" hidden>
             <div class="check"><svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27l8 8 15-17"/></svg></div>
@@ -727,6 +762,23 @@
             Repetir falhas
           </button>
           <button id="btn-clear-queue" class="btn-ghost btn-sm">Limpar</button>
+        </div>
+        <div class="card q-sched" id="queue-schedule-box">
+          <div class="q-sched-main">
+            <div class="q-sched-title">
+              <svg class="i"><use href="#i-clock"/></svg>
+              <div>
+                <strong>Baixar mais tarde</strong>
+                <span class="dim">Inicia a fila automaticamente no horário escolhido (com o app aberto ou na bandeja)</span>
+              </div>
+            </div>
+            <div class="q-sched-controls">
+              <input type="time" id="queue-schedule-time" class="inp inp-sm mono" aria-label="Horário agendado">
+              <button type="button" id="btn-schedule-queue" class="btn-ghost btn-sm"><svg class="i"><use href="#i-clock"/></svg>Agendar fila</button>
+              <button type="button" id="btn-cancel-schedule" class="btn-ghost btn-sm btn-danger-soft hidden"><svg class="i"><use href="#i-x"/></svg>Cancelar</button>
+            </div>
+          </div>
+          <p id="queue-schedule-status" class="q-sched-status dim hidden"></p>
         </div>
         <div id="queue-status" class="card q-status status-box hidden">
           <div class="pbar-bg" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="queue-bar" class="pbar-fill"></div></div>
@@ -917,6 +969,7 @@
     </main>
   </div>
 
+  <script src="lib/media-utils.js"></script>
   <script src="renderer.js"></script>
   <script src="ui-fx.js"></script>
 </body>

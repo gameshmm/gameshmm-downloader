@@ -7,7 +7,7 @@
     // O Spotify Web Player prefixa a URL com o idioma (ex: /intl-pt/album/...)
     // dependendo da região/idioma do navegador — o prefixo é opcional aqui
     // pra cobrir os dois casos.
-    return /^\/(?:intl-[^/]+\/)?(track|album|playlist|episode|show)\//.test(location.pathname);
+    return /^\/(?:intl-[^/]+\/)?(track|album|playlist)\//.test(location.pathname);
   }
 
   function inject() {

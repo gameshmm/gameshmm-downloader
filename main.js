@@ -2,8 +2,31 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Notification, clipboard, Tra
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
 const ffmpeg = require('ffmpeg-static');
+const https = require('https');
 const { autoUpdater } = require('electron-updater');
+const {
+  DUP_IGNORED_PARAMS,
+  normalizeUrlForDup,
+  isSafeMediaUrl,
+  parseSpotifyUrl,
+  parseTimeToSeconds,
+  sanitizeOutputFilename,
+  AUDIO_ONLY_EXTENSIONS,
+  CONTAINER_COMPAT,
+  SPOT_FMT_MAP,
+  SPOT_QUALITY_MAP,
+  evaluateDiskSpace,
+  sanitizeLangCode,
+  extractAudioTracksAndSubs,
+  buildAudioSelector,
+  buildVideoFormatExpression,
+  sanitizeDiagnosticStderr,
+  canOfferCompatRetry,
+  validateBridgeHeaders,
+  computeNextScheduleTimestamp,
+} = require('./lib/media-utils');
 
 // Resolve binaries out of asar when running from installed app
 const rawYtDlp     = require('youtube-dl-exec/src/constants').YOUTUBE_DL_PATH;
@@ -105,6 +128,9 @@ function resolveYtDlpBin() {
 
 let mainWindow;
 const activeProcs = new Map();
+const canceledDownloadIds = new Set();
+const canceledPlaylistIds = new Set();
+const canceledSpotifyIds  = new Set();
 
 // ── Extensão do navegador: protocolo customizado ────────────────────────────────
 // O botão "Baixar vídeo" da extensão (ver /extension) abre um link
@@ -237,8 +263,55 @@ function extractProtocolAction(argv) {
 }
 
 // Se o app foi aberto direto pelo link (não estava rodando ainda), a ação já
-// vem no argv de inicialização — guarda até a janela existir pra repassar.
-let pendingProtocolAction = launchAction;
+// vem no argv de inicialização — guarda até a janela terminar de carregar pra repassar.
+const pendingProtocolActions = launchAction ? [launchAction] : [];
+const pendingLoginNotifications = [];
+let pendingScheduledTrigger = null;
+let pendingScheduleExpired = null;
+
+function isMainWindowReady() {
+  return mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading();
+}
+
+function getDiskFreeBytes(targetPath) {
+  if (!targetPath || typeof targetPath !== 'string') return { freeBytes: null, checkedPath: null };
+  let probe = path.resolve(targetPath);
+  for (let i = 0; i < 12; i++) {
+    try {
+      if (fs.existsSync(probe)) {
+        const st = fs.statfsSync(probe);
+        if (st && typeof st.bavail !== 'undefined' && typeof st.bsize !== 'undefined') {
+          return { freeBytes: Number(st.bavail) * Number(st.bsize), checkedPath: probe };
+        }
+        return { freeBytes: null, checkedPath: probe };
+      }
+    } catch {}
+    const parent = path.dirname(probe);
+    if (!parent || parent === probe) break;
+    probe = parent;
+  }
+  return { freeBytes: null, checkedPath: null };
+}
+
+async function confirmDiskSpaceIfLow(savePath, estimatedBytes = 0, interactive = true) {
+  const { freeBytes, checkedPath } = getDiskFreeBytes(savePath);
+  const evaluation = evaluateDiskSpace(freeBytes, estimatedBytes);
+  if (!evaluation.critical) return { proceed: true, evaluation, checkedPath };
+  if (!interactive || !mainWindow || mainWindow.isDestroyed()) {
+    return { proceed: false, blocked: true, error: evaluation.message, evaluation, checkedPath };
+  }
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'Pouco espaço em disco',
+    message: evaluation.message,
+    detail: `Pasta selecionada: ${savePath}\n\nDeseja continuar mesmo assim?`,
+    buttons: ['Continuar mesmo assim', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    icon: path.join(__dirname, 'assets', 'icon.ico'),
+  });
+  return { proceed: response === 0, canceledByUser: response !== 0, evaluation, checkedPath };
+}
 
 function applyProtocolAction(action) {
   if (!action) return;
@@ -248,13 +321,13 @@ function applyProtocolAction(action) {
     ingestCookiesFromExtension(action.data);
     return;
   }
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  if (isMainWindowReady()) {
     mainWindow.webContents.send('open-download-url', action.url);
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
   } else {
-    pendingProtocolAction = action;
+    pendingProtocolActions.push(action);
   }
 }
 
@@ -335,28 +408,13 @@ function saveHistory(h) {
 }
 function addToHistory(entry) {
   const h = loadHistory();
-  h.unshift({ ...entry, id: Date.now() });
+  h.unshift({ ...entry, id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}` });
   if (h.length > 200) h.splice(200);
   saveHistory(h);
 }
 
 // ── Detecção de duplicado ────────────────────────────────────────────────────
-// Compara links ignorando parâmetros de rastreamento comuns (si, utm_*, etc.)
-// e a barra/hash no final, pra que "o mesmo vídeo colado duas vezes com um
-// parâmetro de compartilhamento diferente" ainda conte como o mesmo link.
-const DUP_IGNORED_PARAMS = ['si', 'feature', 'pp', 'ref', 'ref_src', 'utm_source', 'utm_medium', 'utm_campaign', 'igshid'];
-function normalizeUrlForDup(url = '') {
-  try {
-    const u = new URL(url.trim());
-    u.hash = '';
-    DUP_IGNORED_PARAMS.forEach(p => u.searchParams.delete(p));
-    let s = u.toString();
-    if (s.endsWith('/')) s = s.slice(0, -1);
-    return s.toLowerCase();
-  } catch {
-    return url.trim().toLowerCase();
-  }
-}
+// normalizeUrlForDup e DUP_IGNORED_PARAMS vêm de ./lib/media-utils.js.
 
 // Procura no histórico um download com sucesso pro mesmo link. Não distingue
 // vídeo/áudio/qualidade de propósito — se já baixou esse vídeo antes de
@@ -565,11 +623,34 @@ function cookiesToNetscapeFile(cookies) {
 }
 
 // Recebe o payload de cookies mandado pela extensão do navegador (via
-// gameshmm-downloader://cookies?data=<json base64>), grava em disco no
-// formato Netscape e avisa a janela principal pra atualizar o badge de
-// login. Retorna true se achou um cookie de sessão autenticada de verdade
-// (não só cookies de consentimento/preferência que o Google seta mesmo
-// deslogado).
+// gameshmm-downloader://cookies?data=<json base64> ou HTTP bridge /cookies), grava
+// em disco no formato Netscape e avisa a janela principal pra atualizar o badge
+// de login.
+function ingestCookiesFromExtensionPayload(cookies, { focusWindow = true } = {}) {
+  if (!Array.isArray(cookies)) {
+    const msg = 'Não consegui ler os cookies enviados pela extensão. Tente atualizar a extensão e conectar de novo.';
+    notifyLoginResult(false, msg, { focusWindow });
+    return { ok: false, error: msg };
+  }
+  const relevant = cookies.filter(c => c && c.name && c.domain && isAuthCookieDomain(c.domain));
+  if (!relevant.length) {
+    const msg = 'Nenhum cookie de login do YouTube/Google encontrado. Confirme que você está logado no navegador antes de clicar em "Conectar ao app" na extensão.';
+    notifyLoginResult(false, msg, { focusWindow });
+    return { ok: false, error: msg };
+  }
+  try {
+    fs.writeFileSync(cookiesFilePath(), cookiesToNetscapeFile(relevant), 'utf8');
+  } catch (e) {
+    const msg = `Não consegui salvar os cookies de login em disco: ${e.message}`;
+    notifyLoginResult(false, msg, { focusWindow });
+    return { ok: false, error: msg };
+  }
+  const loggedIn = relevant.some(c => c.name === 'SID' || c.name === '__Secure-1PSID' || c.name === 'LOGIN_INFO');
+  const err = loggedIn ? null : 'Cookies recebidos, mas não encontrei um login ativo. Confirme que você está logado no YouTube/Google nesse navegador.';
+  notifyLoginResult(loggedIn, err, { focusWindow });
+  return { ok: loggedIn, error: err };
+}
+
 function ingestCookiesFromExtension(base64Data) {
   let cookies;
   try {
@@ -580,27 +661,162 @@ function ingestCookiesFromExtension(base64Data) {
     notifyLoginResult(false, 'Não consegui ler os cookies enviados pela extensão. Tente atualizar a extensão e conectar de novo.');
     return;
   }
-  const relevant = cookies.filter(c => c && c.name && c.domain && isAuthCookieDomain(c.domain));
-  if (!relevant.length) {
-    notifyLoginResult(false, 'Nenhum cookie de login do YouTube/Google encontrado. Confirme que você está logado no navegador antes de clicar em "Conectar ao app" na extensão.');
-    return;
-  }
-  try {
-    fs.writeFileSync(cookiesFilePath(), cookiesToNetscapeFile(relevant), 'utf8');
-  } catch (e) {
-    notifyLoginResult(false, `Não consegui salvar os cookies de login em disco: ${e.message}`);
-    return;
-  }
-  const loggedIn = relevant.some(c => c.name === 'SID' || c.name === '__Secure-1PSID' || c.name === 'LOGIN_INFO');
-  notifyLoginResult(loggedIn, loggedIn ? null : 'Cookies recebidos, mas não encontrei um login ativo. Confirme que você está logado no YouTube/Google nesse navegador.');
+  ingestCookiesFromExtensionPayload(cookies, { focusWindow: true });
 }
 
-function notifyLoginResult(success, error) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+function notifyLoginResult(success, error, { focusWindow = true } = {}) {
+  if (!isMainWindowReady()) {
+    pendingLoginNotifications.push({ success, error });
+    return;
+  }
+  if (focusWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
   mainWindow.webContents.send('login-cookies-received', { success, error });
+}
+
+// ── Bridge HTTP local para a extensão do navegador ────────────────────────────
+const BRIDGE_PORTS = [47832, 47833, 47834, 47835];
+let bridgeServer = null;
+let bridgePort = null;
+
+function readJsonBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        req.destroy();
+        reject(Object.assign(new Error('Payload muito grande'), { statusCode: 413 }));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      try {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch {
+        reject(Object.assign(new Error('JSON inválido'), { statusCode: 400 }));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function sendBridgeJson(res, statusCode, payload, corsOrigin) {
+  const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
+  if (corsOrigin) {
+    headers['Access-Control-Allow-Origin'] = corsOrigin;
+    headers['Vary'] = 'Origin';
+  }
+  res.writeHead(statusCode, headers);
+  res.end(JSON.stringify(payload));
+}
+
+function listenBridgeOnPort(server, port) {
+  return new Promise((resolve, reject) => {
+    const onError = (err) => { server.removeListener('listening', onListening); reject(err); };
+    const onListening = () => { server.removeListener('error', onError); resolve(port); };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+async function startLocalBridge() {
+  if (bridgeServer) return bridgePort;
+  const server = http.createServer(async (req, res) => {
+    const origin = req.headers.origin ? String(req.headers.origin) : '';
+    if (req.method === 'OPTIONS') {
+      const check = validateBridgeHeaders({ method: 'POST', origin, headers: { 'x-gdl-extension': '1', 'content-type': 'application/json' } });
+      if (!check.ok || !check.corsOrigin) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
+      const preflightHeaders = {
+        'Access-Control-Allow-Origin': check.corsOrigin,
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-GDL-Extension',
+        'Access-Control-Max-Age': '600',
+        'Vary': 'Origin',
+      };
+      if (String(req.headers['access-control-request-private-network'] || '').toLowerCase() === 'true') {
+        preflightHeaders['Access-Control-Allow-Private-Network'] = 'true';
+      }
+      res.writeHead(204, preflightHeaders);
+      res.end();
+      return;
+    }
+
+    const authCheck = validateBridgeHeaders({ method: req.method, origin, headers: req.headers });
+    if (!authCheck.ok) {
+      sendBridgeJson(res, authCheck.status || 403, { ok: false, error: authCheck.reason }, null);
+      return;
+    }
+
+    const pathname = (req.url || '/').split('?')[0];
+    if (req.method === 'GET' && pathname === '/status') {
+      sendBridgeJson(res, 200, {
+        ok: true,
+        bridge: 'gameshmm-downloader',
+        version: app.getVersion(),
+        port: bridgePort,
+        cookiesConnected: !!getCookieAuth(),
+        elevated: isElevated(),
+      }, authCheck.corsOrigin);
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/open') {
+      try {
+        const body = await readJsonBody(req, 16 * 1024);
+        const url = typeof body?.url === 'string' ? body.url.trim() : '';
+        if (!isSafeMediaUrl(url)) {
+          sendBridgeJson(res, 400, { ok: false, error: 'URL inválida' }, authCheck.corsOrigin);
+          return;
+        }
+        applyProtocolAction({ type: 'download', url });
+        sendBridgeJson(res, 200, { ok: true }, authCheck.corsOrigin);
+      } catch (e) {
+        sendBridgeJson(res, e.statusCode || 400, { ok: false, error: e.message }, authCheck.corsOrigin);
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/cookies') {
+      try {
+        const body = await readJsonBody(req, 256 * 1024);
+        try { const s = loadSettings(); s.extensionLastSeen = new Date().toISOString(); saveSettings(s); } catch {}
+        const result = ingestCookiesFromExtensionPayload(body?.cookies, { focusWindow: false });
+        sendBridgeJson(res, result.ok ? 200 : 400, {
+          ok: result.ok,
+          cookiesConnected: !!getCookieAuth(),
+          error: result.error || null,
+        }, authCheck.corsOrigin);
+      } catch (e) {
+        sendBridgeJson(res, e.statusCode || 400, { ok: false, error: e.message }, authCheck.corsOrigin);
+      }
+      return;
+    }
+
+    sendBridgeJson(res, 404, { ok: false, error: 'Not found' }, authCheck.corsOrigin);
+  });
+
+  for (const port of BRIDGE_PORTS) {
+    try {
+      await listenBridgeOnPort(server, port);
+      bridgeServer = server;
+      bridgePort = port;
+      return port;
+    } catch {}
+  }
+  try { server.close(); } catch {}
+  return null;
 }
 
 // ── Browser process info (for cookie-lock errors) ───────────────────────────────
@@ -615,7 +831,9 @@ const BROWSER_INFO = {
 // Builds a friendly error object. When the error is caused by the configured
 // browser's cookie database being locked (browser still running), it also
 // reports which browser/process is responsible so the UI can offer to close it.
-function buildError(msg = '') {
+function buildError(msg = '', context = {}) {
+  const technicalDetails = sanitizeDiagnosticStderr(msg);
+  const canCompatRetry = canOfferCompatRetry({ stderr: msg, error: msg, ...context });
   const isCookieLock = msg.includes('Could not copy') && msg.includes('cookie database');
   if (isCookieLock) {
     const browserKey = getCookieBrowser();
@@ -626,12 +844,27 @@ function buildError(msg = '') {
         : 'Feche o navegador completamente para liberar os cookies e tente novamente.',
       lockedBrowser: browserKey || null,
       lockedBrowserLabel: info ? info.label : null,
+      technicalDetails,
+      canCompatRetry: false,
     };
   }
   if (isLikelyDefenderBlock(msg)) {
-    return { error: friendlyError(msg), lockedBrowser: null, lockedBrowserLabel: null, maybeDefenderBlocked: true };
+    return {
+      error: friendlyError(msg),
+      lockedBrowser: null,
+      lockedBrowserLabel: null,
+      maybeDefenderBlocked: true,
+      technicalDetails,
+      canCompatRetry: false,
+    };
   }
-  return { error: friendlyError(msg), lockedBrowser: null, lockedBrowserLabel: null };
+  return {
+    error: friendlyError(msg),
+    lockedBrowser: null,
+    lockedBrowserLabel: null,
+    technicalDetails,
+    canCompatRetry,
+  };
 }
 
 function killBrowserProcess(browserKey) {
@@ -704,6 +937,7 @@ function withNodeJsRuntimeOpt(opts) {
 
 // ── Window ────────────────────────────────────────────────────────────────────
 function createWindow() {
+  mainWindowLoaded = false;
   mainWindow = new BrowserWindow({
     width: 720, height: 840,
     webPreferences: {
@@ -718,18 +952,35 @@ function createWindow() {
     icon: path.join(__dirname, 'assets', 'icon.ico')
   });
   mainWindow.loadFile('index.html');
+  mainWindow.on('closed', () => { mainWindowLoaded = false; });
   mainWindow.webContents.once('did-finish-load', () => {
+    mainWindowLoaded = true;
     // Em try próprio: esse bloco grava settings, e uma falha nele não pode
-    // impedir o `pendingProtocolAction` logo abaixo de rodar — que é o caminho
+    // impedir a fila de protocolo logo abaixo de rodar — que é o caminho
     // de "o app foi aberto pelo clique na extensão".
     try {
       const entries = getChangelogUpdateIfAny();
       if (entries && entries.length) mainWindow.webContents.send('show-changelog', entries);
     } catch (e) { console.warn('[changelog] falhou:', e.message); }
-    if (pendingProtocolAction) {
-      if (pendingProtocolAction.type === 'cookies') ingestCookiesFromExtension(pendingProtocolAction.data);
-      else mainWindow.webContents.send('open-download-url', pendingProtocolAction.url);
-      pendingProtocolAction = null;
+    while (pendingProtocolActions.length) {
+      const action = pendingProtocolActions.shift();
+      if (!action) continue;
+      if (action.type === 'cookies') ingestCookiesFromExtension(action.data);
+      else mainWindow.webContents.send('open-download-url', action.url);
+    }
+    while (pendingLoginNotifications.length) {
+      const notif = pendingLoginNotifications.shift();
+      mainWindow.webContents.send('login-cookies-received', notif);
+    }
+    if (pendingScheduledTrigger) {
+      const trig = pendingScheduledTrigger;
+      pendingScheduledTrigger = null;
+      mainWindow.webContents.send('trigger-scheduled-queue', trig);
+    }
+    if (pendingScheduleExpired) {
+      const exp = pendingScheduleExpired;
+      pendingScheduleExpired = null;
+      mainWindow.webContents.send('queue-schedule-expired', exp);
     }
   });
   mainWindow.once('ready-to-show', () => mainWindow.show());
@@ -941,11 +1192,13 @@ app.whenReady().then(() => {
   resolveYtDlpBin();
   resolveFfmpegBin();
   startHandoffWatcher();
+  startLocalBridge();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   applyTraySetting();
   applyGlobalShortcutSetting();
   scheduleYtDlpUpdateCheck();
+  startQueueScheduler();
 
   // Only real, packaged installs have update metadata to check against —
   // running via `npm start` would just log a harmless "dev-mode" error.
@@ -968,7 +1221,12 @@ function killAllChildProcesses() {
   for (const [key, proc] of activeProcs) { killProc(proc); activeProcs.delete(key); }
 }
 app.on('before-quit', () => { appIsQuitting = true; killAllChildProcesses(); });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); clearInstanceMarker(); });
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  clearInstanceMarker();
+  if (queueScheduleTimer) { clearInterval(queueScheduleTimer); queueScheduleTimer = null; }
+  if (bridgeServer) { try { bridgeServer.close(); } catch {} bridgeServer = null; }
+});
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 ipcMain.handle('check-login', () => !!getCookieAuth());
@@ -1127,6 +1385,10 @@ ipcMain.handle('set-taskbar-progress', (_e, v) => {
   try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setProgressBar(typeof v === 'number' && v >= 0 ? Math.min(v, 1) : -1); } catch {}
 });
 ipcMain.handle('cancel-download', (_, id) => {
+  if (id) {
+    canceledDownloadIds.add(id);
+    canceledPlaylistIds.add(id);
+  }
   const p = activeProcs.get(id);
   if (p) { killProc(p); activeProcs.delete(id); }
   const subKeys = [...activeProcs.keys()].filter(k => k.startsWith(`${id}_`));
@@ -1320,6 +1582,8 @@ function isElevated() {
 ipcMain.handle('get-runtime-info', async () => {
   const settings = loadSettings();
   resolveFfmpegBin();
+  const diskTarget = settings.defaultFolder || settings.lastFolder || app.getPath('downloads') || app.getPath('userData');
+  const diskInfo = getDiskFreeBytes(diskTarget);
   const info = {
     appVersion: app.getVersion(),
     packaged: app.isPackaged,
@@ -1335,12 +1599,20 @@ ipcMain.handle('get-runtime-info', async () => {
     cookiesConnected: !!getCookieAuth(),
     cookiesUpdatedAt: null,
     extensionLastSeen: settings.extensionLastSeen || null,
+    bridgePort,
+    diskFreeBytes: diskInfo.freeBytes,
+    diskPath: diskInfo.checkedPath,
     ytdlpVersion: null,
   };
   try { info.cookiesUpdatedAt = fs.statSync(cookiesFilePath()).mtime.toISOString(); } catch {}
   try { info.ytdlpVersion = await getInstalledYtDlpVersion(); } catch {}
   try { info.ffmpegVersion = await getInstalledFfmpegVersion(); } catch {}
   return info;
+});
+
+ipcMain.handle('check-disk-space', (_, { targetPath, estimatedBytes } = {}) => {
+  const { freeBytes, checkedPath } = getDiskFreeBytes(targetPath || app.getPath('downloads'));
+  return { freeBytes, checkedPath, ...evaluateDiskSpace(freeBytes, estimatedBytes || 0) };
 });
 
 ipcMain.handle('write-clipboard-text', (_, text) => {
@@ -1356,7 +1628,12 @@ ipcMain.handle('execute-power-action', async (_, action) => {
     }
   } else if (action === 'sleep') {
     if (process.platform === 'win32') {
-      require('child_process').exec('rundll32.exe powrprof.dll,SetSuspendState 0,1,0', () => {});
+      require('child_process').execFile(
+        'powershell.exe',
+        ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false) | Out-Null'],
+        { windowsHide: true },
+        () => {}
+      );
       return { success: true, message: 'Computador suspenso' };
     }
   }
@@ -1394,6 +1671,79 @@ ipcMain.handle('save-queue', (_, items) => {
   catch { return false; }
 });
 
+// ── Agendamento da fila ("Baixar mais tarde") ────────────────────────────────
+let queueScheduleTimer = null;
+const SCHEDULE_GRACE_MS = 15 * 60 * 1000;
+
+function checkQueueSchedule() {
+  const s = loadSettings();
+  const sched = s.queueSchedule;
+  if (!sched || !sched.targetAt) return;
+  const lateMs = Date.now() - Number(sched.targetAt);
+  if (lateMs < 0) return;
+
+  delete s.queueSchedule;
+  saveSettings(s);
+
+  if (lateMs <= SCHEDULE_GRACE_MS) {
+    const payload = { folder: sched.folder, time: sched.time };
+    showMainWindow();
+    if (isMainWindowReady()) {
+      mainWindow.webContents.send('trigger-scheduled-queue', payload);
+    } else {
+      pendingScheduledTrigger = payload;
+    }
+  } else {
+    const payload = { time: sched.time };
+    if (isMainWindowReady()) {
+      mainWindow.webContents.send('queue-schedule-expired', payload);
+    } else {
+      pendingScheduleExpired = payload;
+    }
+  }
+}
+
+function startQueueScheduler() {
+  checkQueueSchedule();
+  if (queueScheduleTimer) clearInterval(queueScheduleTimer);
+  queueScheduleTimer = setInterval(checkQueueSchedule, 10000);
+}
+
+ipcMain.handle('get-queue-schedule', () => {
+  checkQueueSchedule();
+  return loadSettings().queueSchedule || null;
+});
+
+ipcMain.handle('set-queue-schedule', async (_, payload) => {
+  if (!payload || !payload.time) {
+    const s = loadSettings();
+    delete s.queueSchedule;
+    saveSettings(s);
+    return { ok: true, schedule: null };
+  }
+  const computed = computeNextScheduleTimestamp(payload.time);
+  if (!computed) return { ok: false, error: 'Horário inválido — escolha um horário no formato HH:MM.' };
+
+  let folder = payload.folder;
+  if (!folder) {
+    const settings = loadSettings();
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: 'Pasta de destino para a fila agendada',
+      properties: ['openDirectory'],
+      defaultPath: settings.lastFolder || settings.defaultFolder || undefined,
+    });
+    if (canceled || !filePaths[0]) return { ok: false, canceled: true };
+    folder = filePaths[0];
+  }
+
+  const schedule = { ...computed, folder };
+  const cur = loadSettings();
+  cur.lastFolder = folder;
+  cur.queueSchedule = schedule;
+  saveSettings(cur);
+  return { ok: true, schedule };
+});
+
 // Checa uma vez pouco depois de abrir (pra não competir com o carregamento da
 // janela) e depois a cada 24h enquanto o app ficar aberto (ex: rodando na
 // bandeja). Se der erro (sem internet, GitHub fora do ar, etc.) fica quieto —
@@ -1409,12 +1759,7 @@ function scheduleYtDlpUpdateCheck() {
   setInterval(run, 24 * 60 * 60 * 1000);
 }
 
-// Toda URL que chega do renderer passa por aqui antes de virar argumento de
-// processo. O yt-dlp aceita 1000+ sites, então o filtro é só de esquema — o que
-// importa é barrar coisas como "-o", "file://" ou "javascript:".
-function isSafeMediaUrl(u) {
-  return typeof u === 'string' && /^https?:\/\/[^\s]+$/i.test(u.trim());
-}
+// isSafeMediaUrl vem de ./lib/media-utils.js
 const BAD_URL = { success: false, error: 'Endereço inválido — cole um link começando com http:// ou https://.' };
 
 // ── Get Formats ───────────────────────────────────────────────────────────────
@@ -1443,7 +1788,7 @@ ipcMain.handle('get-formats', async (_, { url }) => {
     const seen = new Set();
     const formats = (info.formats || [])
       .filter(f => f.vcodec !== 'none' && f.height)
-      .sort((a, b) => (b.height || 0) - (a.height || 0))
+      .sort((a, b) => ((b.height || 0) - (a.height || 0)) || ((b.fps || 0) - (a.fps || 0)) || ((b.tbr || 0) - (a.tbr || 0)))
       .filter(f => {
         const key = `${f.height}_${vcodecFamily(f.vcodec)}`;
         if (seen.has(key)) return false;
@@ -1456,13 +1801,20 @@ ipcMain.handle('get-formats', async (_, { url }) => {
         height: f.height,
         fps: f.fps,
         vcodec: vcodecFamily(f.vcodec),
+        hasAudio: !!(f.acodec && f.acodec !== 'none'),
         note: f.format_note,
         size: f.filesize || f.filesize_approx || null
       }));
     // Tamanho do melhor áudio (m4a de preferência): entra na estimativa do arquivo final.
     const audios = (info.formats || []).filter(f => f.acodec && f.acodec !== 'none' && f.vcodec === 'none' && (f.filesize || f.filesize_approx));
     const bestAudio = audios.filter(f => f.ext === 'm4a').sort((a, b) => (b.abr || 0) - (a.abr || 0))[0] || audios.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
-    return { success: true, formats, audioSize: bestAudio ? (bestAudio.filesize || bestAudio.filesize_approx) : null };
+    const tracksAndSubs = extractAudioTracksAndSubs(info);
+    return {
+      success: true,
+      formats,
+      audioSize: bestAudio ? (bestAudio.filesize || bestAudio.filesize_approx) : null,
+      ...tracksAndSubs,
+    };
   } catch (e) { return { success: false, ...buildError(e.message) }; }
 });
 
@@ -1491,6 +1843,7 @@ ipcMain.handle('get-video-info', async (_, data) => {
 ipcMain.handle('get-playlist-info', async (_, data) => {
   try {
     const url = typeof data === 'string' ? data : data.url;
+    if (!isSafeMediaUrl(url)) return BAD_URL;
     const opts = withNodeJsRuntimeOpt({ dumpSingleJson: true, noWarnings: true, flatPlaylist: true, yesPlaylist: true });
     // Cada item vem com o essencial pra mostrar uma lista marcável na UI
     // (índice original na playlist, título, duração se o extractor mandar) —
@@ -1517,8 +1870,49 @@ ipcMain.handle('get-playlist-info', async (_, data) => {
   } catch (e) { return { success: false, ...buildError(e.message) }; }
 });
 
+ipcMain.handle('expand-queue-items', async (_, { url } = {}) => {
+  if (!isSafeMediaUrl(url)) return BAD_URL;
+  try {
+    const sp = parseSpotifyUrl(url);
+    if (sp && (sp.type === 'album' || sp.type === 'playlist')) {
+      const data = await getSpotifyTracks(url);
+      const items = (data.tracks || [])
+        .filter(t => t && t.id)
+        .map(t => ({
+          url: `https://open.spotify.com/track/${t.id}`,
+          title: t.artists ? `${t.artists} - ${t.title}` : t.title,
+          isSpotify: true,
+        }))
+        .filter(it => isSafeMediaUrl(it.url));
+      if (!items.length) return { success: false, error: 'Não foi possível obter links individuais dessas faixas do Spotify.' };
+      return { success: true, sourceTitle: data.name || '', items };
+    }
+    const opts = withNodeJsRuntimeOpt({ dumpSingleJson: true, noWarnings: true, flatPlaylist: true, yesPlaylist: true });
+    let info;
+    try {
+      info = await youtubedl(url, opts);
+    } catch (err) {
+      const msg = err.message || '';
+      if (!NEEDS_LOGIN_RE.test(msg) || !applyCookieOpts(opts)) throw err;
+      info = await youtubedl(url, opts);
+    }
+    const entries = (info.entries || []).filter(e => e && (e.id || e.url || e.webpage_url));
+    const items = entries
+      .map((e, i) => ({
+        url: e.webpage_url || (e.url && /^https?:\/\//i.test(e.url) ? e.url : (e.id ? `https://www.youtube.com/watch?v=${e.id}` : '')),
+        title: e.title || e.id || `Vídeo ${i + 1}`,
+        isSpotify: false,
+      }))
+      .filter(it => isSafeMediaUrl(it.url));
+    if (!items.length) return { success: false, error: 'Nenhum item encontrado para expandir.' };
+    return { success: true, sourceTitle: info.title || '', items };
+  } catch (e) {
+    return { success: false, ...buildError(e.message) };
+  }
+});
+
 // ── Download Video ────────────────────────────────────────────────────────────
-ipcMain.handle('download-video', async (event, { url, format, quality, useCookies, savePath: provided, downloadId, formatId, title, accelerate, container, audioBitrate, videoCodec }) => {
+ipcMain.handle('download-video', async (event, { url, format, quality, useCookies, savePath: provided, downloadId, formatId, formatHasAudio, title, accelerate, container, audioBitrate, videoCodec, audioLang, estimatedBytes, silentGlobalProgress }) => {
   if (!isSafeMediaUrl(url)) return BAD_URL;
   try {
     let savePath = provided;
@@ -1526,9 +1920,19 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
       const settings = loadSettings();
       const def = settings.lastFolder || settings.defaultFolder || undefined;
       const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { title: 'Pasta de destino', defaultPath: def, properties: ['openDirectory'] });
-      if (canceled || !filePaths[0]) return { success: false, error: 'Download cancelado.' };
+      if (canceled || !filePaths[0]) return { success: false, canceled: true, error: 'Download cancelado.' };
       savePath = filePaths[0];
       const s = loadSettings(); s.lastFolder = savePath; saveSettings(s);
+    }
+
+    const diskCheck = await confirmDiskSpaceIfLow(savePath, estimatedBytes || 0, !silentGlobalProgress);
+    if (!diskCheck.proceed) {
+      return {
+        success: false,
+        canceled: !!diskCheck.canceledByUser,
+        error: diskCheck.error || 'Espaço em disco insuficiente.',
+        diskSpaceInsufficient: true,
+      };
     }
 
     const ffmpegPath = ffmpegBin;
@@ -1545,6 +1949,8 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
     const effectiveCodec = (videoCodec && videoCodec !== 'auto')
       ? videoCodec
       : (dlSettings.defaultVideoCodec && dlSettings.defaultVideoCodec !== 'auto' ? dlSettings.defaultVideoCodec : 'auto');
+    const cleanAudioLang = sanitizeLangCode(audioLang || '');
+    const audioPref = buildAudioSelector({ outContainer, audioLang: cleanAudioLang });
 
     const buildArgs = (fmtOverride, forceCookies) => {
       // "--" fecha a lista de opções: tudo depois dele é tratado como endereço,
@@ -1559,30 +1965,22 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
         }
         pushVideoExtraArgs(args, dlSettings);
       } else if (formatId) {
-        args.push('--format', formatId, '--output', outTemplate, '--merge-output-format', outContainer);
+        const exactFmt = formatHasAudio === true ? formatId : `${formatId}+(${audioPref})/${formatId}+bestaudio/${formatId}`;
+        args.push('--format', exactFmt, '--output', outTemplate, '--merge-output-format', outContainer);
         pushVideoExtraArgs(args, dlSettings);
       } else if (format === 'audio') {
+        if (cleanAudioLang) {
+          args.push('--format', buildAudioSelector({ outContainer: 'mkv', audioLang: cleanAudioLang }));
+        }
         // --embed-thumbnail writes the video's own thumbnail as MP3 cover art
         // (via ffmpeg's ID3 APIC frame) and --embed-metadata sets title/artist
         // tags, so the file shows up properly in music players.
         args.push('-x', '--audio-format', 'mp3', '--audio-quality', [128, 192, 256, 320].includes(Number(audioBitrate)) ? `${Number(audioBitrate)}K` : '0', '--embed-thumbnail', '--embed-metadata', '--output', outTemplate);
         pushSponsorBlockArgs(args, dlSettings);
       } else {
-        const capH = quality === 'best' || !quality ? '' : `[height<=${quality}]`;
-        let fmt;
-        if (effectiveCodec === 'h264') {
-          fmt = `bestvideo[vcodec^=avc1]${capH}+bestaudio[ext=m4a]/bestvideo[vcodec^=h264]${capH}+bestaudio/bestvideo[ext=mp4]${capH}+bestaudio[ext=m4a]/bestvideo${capH}+bestaudio/best`;
-          args.push('-S', 'vcodec:h264');
-        } else if (effectiveCodec === 'vp9') {
-          fmt = `bestvideo[vcodec^=vp9]${capH}+bestaudio/bestvideo[vcodec^=vp09]${capH}+bestaudio/bestvideo${capH}+bestaudio/best`;
-          args.push('-S', 'vcodec:vp9');
-        } else if (effectiveCodec === 'av1') {
-          fmt = `bestvideo[vcodec^=av01]${capH}+bestaudio/bestvideo${capH}+bestaudio/best`;
-          args.push('-S', 'vcodec:av1');
-        } else {
-          fmt = outContainer === 'mkv'
-            ? `bestvideo${capH}+bestaudio/best${capH}/best`
-            : `bestvideo[ext=mp4]${capH}+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+        const fmt = buildVideoFormatExpression({ quality, outContainer, effectiveCodec, audioLang: cleanAudioLang });
+        if (effectiveCodec !== 'auto') {
+          args.push('-S', `vcodec:${effectiveCodec}`);
         }
         args.push('--format', fmt, '--output', outTemplate, '--merge-output-format', outContainer);
         pushVideoExtraArgs(args, dlSettings);
@@ -1594,7 +1992,7 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
       return args;
     };
 
-    event.sender.send('download-progress', 'Iniciando download...');
+    if (!silentGlobalProgress) event.sender.send('download-progress', 'Iniciando download...');
     if (downloadId) event.sender.send(`download-progress-${downloadId}`, { type: 'start' });
     let videoTitle = title || url;
 
@@ -1602,6 +2000,13 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
     // de saída + stderr acumulado), sem decidir ainda se foi sucesso — quem
     // chama decide se tenta de novo (ver fallback de 403 logo abaixo).
     const runAttempt = (args) => new Promise(resolve => {
+      let settled = false;
+      const settle = (payload) => {
+        if (settled) return;
+        settled = true;
+        if (downloadId) activeProcs.delete(downloadId);
+        resolve(payload);
+      };
       const proc = spawnDownload(args, downloadId);
       let stderr = '';
 
@@ -1616,73 +2021,53 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
           const size     = line.match(/of\s+~?\s*([\d.]+[KMG]iB)/)?.[1] || '';
           const sizeStr  = size ? ` · de ${size}` : '';
           const payload  = { type: 'progress', percent: parseFloat(pct[1]), speed: speed?.[1] || '', eta: eta?.[1] || '', size };
-          event.sender.send('download-progress', `Baixando: ${pct[1]}%${speedStr}${etaStr}${sizeStr}`);
+          if (!silentGlobalProgress) event.sender.send('download-progress', `Baixando: ${pct[1]}%${speedStr}${etaStr}${sizeStr}`);
           if (downloadId) event.sender.send(`download-progress-${downloadId}`, payload);
         } else if (line.includes('[ExtractAudio]') || line.includes('[ffmpeg]')) {
-          event.sender.send('download-progress', 'Convertendo para MP3...');
-          if (downloadId) event.sender.send(`download-progress-${downloadId}`, { type: 'converting', label: 'Convertendo para MP3...' });
+          const convLabel = format === 'audio' ? 'Convertendo para MP3...' : 'Processando vídeo...';
+          if (!silentGlobalProgress) event.sender.send('download-progress', convLabel);
+          if (downloadId) event.sender.send(`download-progress-${downloadId}`, { type: 'converting', label: convLabel });
         } else if (line.includes('[Merger]')) {
-          event.sender.send('download-progress', 'Mesclando vídeo...');
+          if (!silentGlobalProgress) event.sender.send('download-progress', 'Mesclando vídeo...');
           if (downloadId) event.sender.send(`download-progress-${downloadId}`, { type: 'merging', label: 'Mesclando vídeo...' });
         }
         const dest = line.match(/\[download\] Destination: .+[\\/](.+)\.\w+$/);
-        if (dest) videoTitle = dest[1];
+        if (dest && (!title || videoTitle === url)) videoTitle = dest[1].replace(/\.f\d+$/, '');
       });
-      proc.stderr.on('data', d => { stderr += d.toString(); });
-      proc.on('error', err => {
-        if (downloadId) activeProcs.delete(downloadId);
-        resolve({ code: null, stderr, procError: err.message });
-      });
-      proc.on('close', code => {
-        if (downloadId) activeProcs.delete(downloadId);
-        resolve({ code, stderr, procError: null });
-      });
+      proc.stderr.on('data', d => { stderr = (stderr + d.toString()).slice(-12000); });
+      proc.on('error', err => settle({ code: null, stderr, procError: err.message }));
+      proc.on('close', code => settle({ code, stderr, procError: null }));
     });
 
+    const isCanceled = () => !!(downloadId && canceledDownloadIds.has(downloadId));
     let result = await runAttempt(buildArgs());
 
-    // YouTube costuma exigir um "PO token" pra liberar os formatos de
-    // resolução mais alta — é o que costuma dar HTTP Error 403 em vídeos
-    // específicos, mesmo com o yt-dlp atualizado, e o app não consegue gerar
-    // esse token sozinho. Isso vale só pra formatos acima de 1080p (ou "Máxima
-    // Possível") e não pra --format explícito escolhido em "ver formatos" nem
-    // pra áudio. Duas tentativas antes de desistir, cada uma tentando manter
-    // a qualidade pedida em vez de já baixar a qualidade de cara:
-    //   1) mesma qualidade, mas com os cookies de login (se o usuário já
-    //      conectou a conta) — contas logadas costumam liberar formatos que,
-    //      sem sessão, exigiriam o PO token; então isso às vezes resolve sem
-    //      abrir mão de nada.
-    //   2) se ainda assim der 403 (ou não tiver login salvo), aí sim cai pra
-    //      1080p, que normalmente não exige o token.
     const got403 = () => result.code !== 0 && !result.procError && /HTTP Error 403/.test(result.stderr || '');
-    // Erro que sugere "resolve com login" mas não é o 403 de PO token (ex:
-    // vídeo exclusivo de membros — ver isMembersOnlyError/NEEDS_LOGIN_RE).
-    // Cobre o caso em que o download foi disparado direto (formatId salvo de
-    // uma sessão antiga, etc.) sem passar pelo retry que get-video-info já faz.
     const gotNeedsLogin = () => result.code !== 0 && !result.procError && NEEDS_LOGIN_RE.test(result.stderr || '');
     let usedFallback = false;
     let usedCookieRetry = false;
-    if ((got403() || gotNeedsLogin()) && !formatId && format !== 'audio') {
+    if (!isCanceled() && (got403() || gotNeedsLogin()) && !formatId && format !== 'audio') {
       if (!useCookies && getCookieAuth()) {
         usedCookieRetry = true;
-        event.sender.send('download-progress', 'Conteúdo bloqueado — tentando com sua conta conectada...');
+        if (!silentGlobalProgress) event.sender.send('download-progress', 'Conteúdo bloqueado — tentando com sua conta conectada...');
         if (downloadId) event.sender.send(`download-progress-${downloadId}`, { type: 'progress', percent: 0, speed: '', eta: '', label: 'Tentando de novo com login...' });
         result = await runAttempt(buildArgs(null, true));
       }
       const currentHeight = (quality === 'best' || !quality) ? Infinity : Number(quality);
-      if (got403() && !(currentHeight <= 1080)) {
+      if (!isCanceled() && got403() && !(currentHeight <= 1080)) {
         usedFallback = true;
-        event.sender.send('download-progress', 'Qualidade máxima bloqueada (403) — tentando em 1080p...');
+        if (!silentGlobalProgress) event.sender.send('download-progress', 'Qualidade máxima bloqueada (403) — tentando em 1080p...');
         if (downloadId) event.sender.send(`download-progress-${downloadId}`, { type: 'progress', percent: 0, speed: '', eta: '', label: 'Tentando em qualidade menor (1080p)...' });
-        const fallbackFmt = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
+        const fallbackFmt = buildVideoFormatExpression({ quality: '1080', outContainer, effectiveCodec: 'auto', audioLang: cleanAudioLang });
         result = await runAttempt(buildArgs(fallbackFmt, true));
       }
     }
 
+    if (isCanceled()) {
+      return { success: false, canceled: true, error: 'Download cancelado.' };
+    }
+
     const ok = result.code === 0;
-    // Fora do caminho de sucesso/erro: se o history.json não puder ser gravado
-    // (disco cheio, permissão), isso não pode fazer um download que terminou
-    // bem ser reportado como falha.
     if (!result.procError) {
       try {
         addToHistory({ title: videoTitle, url, format: formatId || format, quality, folder: savePath, date: new Date().toISOString(), status: ok ? 'success' : 'error' });
@@ -1693,41 +2078,89 @@ ipcMain.handle('download-video', async (event, { url, format, quality, useCookie
       if (downloadId) event.sender.send(`download-progress-${downloadId}`, { type: 'done', folder: savePath });
       return { success: true, folder: savePath, usedFallbackQuality: usedFallback, usedCookieRetry };
     } else if (result.procError) {
-      // Erro ao *iniciar* o yt-dlp — quase sempre "o antivírus levou o
-      // executável". Passa pela mesma tradução amigável do resto, que já sabe
-      // explicar esse caso e oferecer o atalho pra Segurança do Windows.
-      const procInfo = buildError(result.procError);
+      const procInfo = buildError(result.procError, { format, container: outContainer, videoCodec: effectiveCodec });
       if (downloadId) event.sender.send(`download-progress-${downloadId}`, { type: 'error', ...procInfo });
       return { success: false, ...procInfo };
     } else {
-      const errInfo = result.stderr ? buildError(result.stderr) : { error: `Erro (código ${result.code})`, lockedBrowser: null, lockedBrowserLabel: null };
+      const errInfo = result.stderr
+        ? buildError(result.stderr, { format, container: outContainer, videoCodec: effectiveCodec })
+        : { error: `Erro (código ${result.code})`, lockedBrowser: null, lockedBrowserLabel: null, technicalDetails: '', canCompatRetry: canOfferCompatRetry({ error: String(result.code), format, container: outContainer, videoCodec: effectiveCodec }) };
       if (usedFallback) errInfo.error = `${errInfo.error} (mesmo em 1080p e com login)`;
       else if (usedCookieRetry) errInfo.error = `${errInfo.error} (mesmo com login)`;
-      if (downloadId) event.sender.send(`download-progress-${downloadId}`, { type: 'error', error: errInfo.error, lockedBrowser: errInfo.lockedBrowser, lockedBrowserLabel: errInfo.lockedBrowserLabel });
+      if (downloadId) event.sender.send(`download-progress-${downloadId}`, { type: 'error', ...errInfo });
       return { success: false, ...errInfo };
     }
   } catch (e) { return { success: false, error: e.message }; }
+  finally {
+    if (downloadId) canceledDownloadIds.delete(downloadId);
+  }
 });
 
 // ── Download Playlist ─────────────────────────────────────────────────────────
-ipcMain.handle('download-playlist', async (event, { url, format, quality, useCookies, downloadId, concurrency = 3, selectedIndexes, accelerate, videoCodec }) => {
+ipcMain.handle('download-playlist', async (event, { url, format, quality, useCookies, downloadId, concurrency = 3, selectedIndexes, accelerate, videoCodec, container, savePath: provided, silentGlobalProgress }) => {
   if (!isSafeMediaUrl(url)) return BAD_URL;
+  const isCanceled = () => !!(downloadId && canceledPlaylistIds.has(downloadId));
   try {
-    const settings = loadSettings();
-    const def = settings.lastFolder || settings.defaultFolder || undefined;
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { title: 'Pasta de destino', defaultPath: def, properties: ['openDirectory'] });
-    if (canceled || !filePaths[0]) return { success: false, error: 'Download cancelado.' };
-    const savePath = filePaths[0];
-    const s = loadSettings(); s.lastFolder = savePath; saveSettings(s);
+    let savePath = provided;
+    if (!savePath) {
+      const settings = loadSettings();
+      const def = settings.lastFolder || settings.defaultFolder || undefined;
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { title: 'Pasta de destino', defaultPath: def, properties: ['openDirectory'] });
+      if (canceled || !filePaths[0]) return { success: false, canceled: true, error: 'Download cancelado.' };
+      savePath = filePaths[0];
+      const s = loadSettings(); s.lastFolder = savePath; saveSettings(s);
+    }
 
-    event.sender.send('playlist-progress', { completed: 0, total: 0, title: 'Obtendo lista de vídeos...', percent: 0, phase: 'fetching' });
-    const fetchOpts = { dumpSingleJson: true, noWarnings: true, flatPlaylist: true, yesPlaylist: true, ignoreErrors: true };
+    const diskCheck = await confirmDiskSpaceIfLow(savePath, 0, !silentGlobalProgress);
+    if (!diskCheck.proceed) {
+      return { success: false, canceled: !!diskCheck.canceledByUser, error: diskCheck.error || 'Espaço em disco insuficiente.' };
+    }
+
+    if (downloadId) activeProcs.set(downloadId, { pid: null });
+    const emitPlProgress = (payload) => {
+      if (!silentGlobalProgress) event.sender.send('playlist-progress', payload);
+      if (downloadId && silentGlobalProgress && payload) {
+        if (payload.phase === 'downloading' && payload.total > 0) {
+          const approx = Math.round(((payload.completed + (payload.percent || 0) / 100) / payload.total) * 100);
+          event.sender.send(`download-progress-${downloadId}`, {
+            type: 'progress',
+            percent: Math.min(99, approx),
+            speed: payload.speed || '',
+            eta: `${payload.completed}/${payload.total}`,
+          });
+        } else if (payload.phase === 'converting') {
+          event.sender.send(`download-progress-${downloadId}`, { type: 'converting', label: payload.label || 'Processando...' });
+        } else if (payload.phase === 'merging') {
+          event.sender.send(`download-progress-${downloadId}`, { type: 'merging', label: 'Mesclando...' });
+        }
+      }
+    };
+
+    emitPlProgress({ completed: 0, total: 0, title: 'Obtendo lista de vídeos...', percent: 0, phase: 'fetching' });
+    const fetchOpts = withNodeJsRuntimeOpt({ dumpSingleJson: true, noWarnings: true, flatPlaylist: true, yesPlaylist: true, ignoreErrors: true });
+    let cookieAuth = useCookies ? getCookieAuth() : null;
     if (useCookies) applyCookieOpts(fetchOpts);
     let entries;
     try {
-      const info = await youtubedl(url, fetchOpts);
+      let info;
+      try {
+        info = await youtubedl(url, fetchOpts);
+      } catch (err) {
+        const msg = err.message || '';
+        if (!useCookies && NEEDS_LOGIN_RE.test(msg) && applyCookieOpts(fetchOpts)) {
+          cookieAuth = getCookieAuth();
+          info = await youtubedl(url, fetchOpts);
+        } else {
+          throw err;
+        }
+      }
       entries = (info.entries || []).filter(e => e && (e.id || e.url));
-    } catch (err) { return { success: false, ...buildError(err.message) }; }
+    } catch (err) {
+      if (isCanceled()) return { success: false, canceled: true, error: 'Download cancelado.' };
+      return { success: false, ...buildError(err.message) };
+    }
+    if (isCanceled()) return { success: false, canceled: true, error: 'Download cancelado.' };
+
     // Guarda a posição original (1-based) antes de filtrar, pra manter o
     // número certo no prefixo do nome do arquivo mesmo quando só parte da
     // playlist foi selecionada (ex: pular o 3 e o 7 não deveria renumerar
@@ -1741,12 +2174,13 @@ ipcMain.handle('download-playlist', async (event, { url, format, quality, useCoo
 
     const total = entries.length;
     const ffmpegPath = ffmpegBin;
-    const cookieAuth = useCookies ? getCookieAuth() : null;
 
     const plSettings = loadSettings();
+    const outContainer = container === 'mkv' ? 'mkv' : 'mp4';
     const effectiveCodec = (videoCodec && videoCodec !== 'auto')
       ? videoCodec
       : (plSettings.defaultVideoCodec && plSettings.defaultVideoCodec !== 'auto' ? plSettings.defaultVideoCodec : 'auto');
+    const audioPref = outContainer === 'mp4' ? 'bestaudio[ext=m4a]/bestaudio' : 'bestaudio';
     // Mesmo template configurado pelo usuário, com o número da posição na
     // frente pra playlist continuar na ordem certa dentro da pasta.
     const plTemplate = String(outputTemplate());
@@ -1765,32 +2199,32 @@ ipcMain.handle('download-playlist', async (event, { url, format, quality, useCoo
         fmt = fmtOverride;
         if (effectiveCodec !== 'auto') plSort.push('-S', `vcodec:${effectiveCodec}`);
       } else if (effectiveCodec === 'h264') {
-        fmt = `bestvideo[vcodec^=avc1]${capH}+bestaudio[ext=m4a]/bestvideo[vcodec^=h264]${capH}+bestaudio/bestvideo[ext=mp4]${capH}+bestaudio[ext=m4a]/bestvideo${capH}+bestaudio/best`;
+        fmt = `bestvideo[vcodec^=avc1]${capH}+${audioPref}/bestvideo[vcodec^=h264]${capH}+${audioPref}/bestvideo[ext=mp4]${capH}+bestaudio[ext=m4a]/bestvideo${capH}+${audioPref}/best[ext=mp4]${capH}/best${capH}/best`;
         plSort.push('-S', 'vcodec:h264');
       } else if (effectiveCodec === 'vp9') {
-        fmt = `bestvideo[vcodec^=vp9]${capH}+bestaudio/bestvideo[vcodec^=vp09]${capH}+bestaudio/bestvideo${capH}+bestaudio/best`;
+        fmt = `bestvideo[vcodec^=vp9]${capH}+${audioPref}/bestvideo[vcodec^=vp09]${capH}+${audioPref}/bestvideo${capH}+${audioPref}/best${capH}/best`;
         plSort.push('-S', 'vcodec:vp9');
       } else if (effectiveCodec === 'av1') {
-        fmt = `bestvideo[vcodec^=av01]${capH}+bestaudio/bestvideo${capH}+bestaudio/best`;
+        fmt = `bestvideo[vcodec^=av01]${capH}+${audioPref}/bestvideo${capH}+${audioPref}/best${capH}/best`;
         plSort.push('-S', 'vcodec:av1');
       } else {
-        fmt = quality === 'best'
-          ? 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-          : `bestvideo[ext=mp4][height<=${quality}]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+        fmt = outContainer === 'mkv'
+          ? `bestvideo${capH}+bestaudio/best${capH}/best`
+          : `bestvideo[ext=mp4]${capH}+bestaudio[ext=m4a]/bestvideo${capH}+${audioPref}/best[ext=mp4]${capH}/best${capH}/best`;
       }
-      const v = ['--format', fmt, ...plSort, '--output', prefix, '--merge-output-format', 'mp4'];
+      const v = ['--format', fmt, ...plSort, '--output', prefix, '--merge-output-format', outContainer];
       pushVideoExtraArgs(v, plSettings);
       return v;
     };
 
-    let completed = 0, errors = 0, lastProcError = null;
+    let completed = 0, errors = 0, lastProcError = null, lastStderr = '';
     const videoQueue = entries.map((e) => ({
       url: e.url || e.webpage_url || `https://www.youtube.com/watch?v=${e.id}`,
       index: e.__originalIndex,
       title: e.title || e.id || `Vídeo ${e.__originalIndex}`
     }));
 
-    event.sender.send('playlist-progress', {
+    emitPlProgress({
       completed: 0, total, title: `Iniciando ${Math.min(concurrency, total)} em paralelo...`, percent: 0, phase: 'start'
     });
 
@@ -1825,15 +2259,16 @@ ipcMain.handle('download-playlist', async (event, { url, format, quality, useCoo
         const speed = line.match(/at\s+([\d.]+[KMG]iB\/s)/);
         const eta   = line.match(/ETA\s+([\d:]+)/);
         if (pct) {
-          event.sender.send('playlist-progress', {
+          emitPlProgress({
             completed, total, title: item.title, percent: +pct[1],
             speed: speed?.[1] || '', eta: eta?.[1] || '',
             index: item.index, phase: 'downloading'
           });
         } else if (line.includes('[ExtractAudio]') || line.includes('[ffmpeg]')) {
-          event.sender.send('playlist-progress', { completed, total, title: item.title, percent: 95, speed: '', eta: '', index: item.index, phase: 'converting' });
+          const convLabel = format === 'audio' ? 'Convertendo MP3...' : 'Processando vídeo...';
+          emitPlProgress({ completed, total, title: item.title, percent: 95, speed: '', eta: '', index: item.index, phase: 'converting', label: convLabel });
         } else if (line.includes('[Merger]')) {
-          event.sender.send('playlist-progress', { completed, total, title: item.title, percent: 97, speed: '', eta: '', index: item.index, phase: 'merging' });
+          emitPlProgress({ completed, total, title: item.title, percent: 97, speed: '', eta: '', index: item.index, phase: 'merging' });
         }
       });
       proc.stderr?.on('data', d => { stderr += d.toString(); });
@@ -1842,37 +2277,44 @@ ipcMain.handle('download-playlist', async (event, { url, format, quality, useCoo
     });
 
     const runWorker = async () => {
-      while (videoQueue.length) {
+      while (videoQueue.length && !isCanceled()) {
         const item = videoQueue.shift();
         const itemId = `${downloadId}_${item.index}`;
 
-        event.sender.send('playlist-progress', {
+        emitPlProgress({
           completed, total, title: item.title, percent: 0, speed: '', eta: '', index: item.index, phase: 'downloading'
         });
 
         let result = await runPlaylistAttempt(item, itemId);
+        if (isCanceled()) break;
 
         // Mesmo fallback de 403 que o download único já tinha: primeiro tenta
         // de novo com a conta conectada, depois cai pra 1080p. Antes a playlist
         // simplesmente marcava o item como "ignorado" na primeira negativa.
         const is403 = () => result.code !== 0 && !result.procError && /HTTP Error 403/.test(result.stderr || '');
         const needsLoginErr = () => result.code !== 0 && !result.procError && NEEDS_LOGIN_RE.test(result.stderr || '');
-        if ((is403() || needsLoginErr()) && format !== 'audio') {
+        if ((is403() || needsLoginErr()) && format !== 'audio' && !isCanceled()) {
           if (!cookieAuth && getCookieAuth()) {
-            event.sender.send('playlist-progress', { completed, total, title: `${item.title} — tentando com seu login...`, percent: 0, index: item.index, phase: 'downloading' });
+            emitPlProgress({ completed, total, title: `${item.title} — tentando com seu login...`, percent: 0, index: item.index, phase: 'downloading' });
             result = await runPlaylistAttempt(item, itemId, null, true);
           }
+          if (isCanceled()) break;
           const height = (quality === 'best' || !quality) ? Infinity : Number(quality);
           if (is403() && !(height <= 1080)) {
-            event.sender.send('playlist-progress', { completed, total, title: `${item.title} — tentando em 1080p...`, percent: 0, index: item.index, phase: 'downloading' });
-            result = await runPlaylistAttempt(item, itemId, 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best', true);
+            emitPlProgress({ completed, total, title: `${item.title} — tentando em 1080p...`, percent: 0, index: item.index, phase: 'downloading' });
+            const fallbackFmt = outContainer === 'mp4'
+              ? 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio[ext=m4a]/best[height<=1080]/best'
+              : 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
+            result = await runPlaylistAttempt(item, itemId, fallbackFmt, true);
           }
         }
+        if (isCanceled()) break;
 
         const ok = result.code === 0;
         if (ok) completed++; else errors++;
         if (!ok && result.procError) lastProcError = result.procError;
-        event.sender.send('playlist-progress', {
+        if (!ok && result.stderr) lastStderr = result.stderr;
+        emitPlProgress({
           completed, total, title: item.title, percent: 100, index: item.index,
           phase: ok ? 'done' : 'skipped'
         });
@@ -1880,7 +2322,10 @@ ipcMain.handle('download-playlist', async (event, { url, format, quality, useCoo
     };
 
     await Promise.all(Array.from({ length: Math.min(concurrency, total) }, runWorker));
-    if (downloadId) activeProcs.delete(downloadId);
+
+    if (isCanceled()) {
+      return { success: false, canceled: true, error: 'Download cancelado.' };
+    }
 
     const summary = errors > 0 ? `${completed} baixados · ${errors} ignorados` : `${completed} vídeos concluídos`;
     try {
@@ -1894,16 +2339,22 @@ ipcMain.handle('download-playlist', async (event, { url, format, quality, useCoo
     // Se nem um item conseguiu nem começar, o motivo real é o erro de spawn —
     // vale explicar (antivírus, yt-dlp sumido) em vez de um "nenhum vídeo".
     if (lastProcError) return { success: false, ...buildError(lastProcError) };
+    if (lastStderr) {
+      const errInfo = buildError(lastStderr, { format, container: outContainer, videoCodec: effectiveCodec });
+      return { success: false, ...errInfo };
+    }
     return { success: false, error: 'Nenhum vídeo foi baixado com sucesso.' };
   } catch (e) { return { success: false, error: e.message }; }
+  finally {
+    if (downloadId) {
+      activeProcs.delete(downloadId);
+      canceledPlaylistIds.delete(downloadId);
+    }
+  }
 });
 
 // ── Converter ─────────────────────────────────────────────────────────────────
-// Files with these extensions have no video stream, so offering "convert to
-// video" for them would just fail in ffmpeg with a confusing error — we gate
-// it both in the picker response (renderer hides the option) and again here
-// as a hard stop in case convert-media is ever called directly.
-const AUDIO_ONLY_EXTENSIONS = new Set(['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.opus', '.wma']);
+// AUDIO_ONLY_EXTENSIONS vem de ./lib/media-utils.js.
 
 ipcMain.handle('choose-media-file', async (_e, droppedPath) => {
   let filePath;
@@ -1925,8 +2376,8 @@ ipcMain.handle('choose-media-file', async (_e, droppedPath) => {
     if (canceled || !filePaths[0]) return { canceled: true };
     filePath = filePaths[0];
   }
-  const isAudioOnly = AUDIO_ONLY_EXTENSIONS.has(path.extname(filePath).toLowerCase());
   const info = await probeMediaInfo(filePath);
+  const isAudioOnly = AUDIO_ONLY_EXTENSIONS.has(path.extname(filePath).toLowerCase()) || !!(info && !info.video && info.audio);
   return { canceled: false, filePath, fileName: path.basename(filePath), isAudioOnly, info };
 });
 
@@ -1939,6 +2390,7 @@ const AUDIO_CONVERT_MAP = {
 };
 const VIDEO_CODEC_MAP = { copy: 'copy', h264: 'libx264', h265: 'libx265', vp9: 'libvpx-vp9', av1: 'libaom-av1' };
 const AUDIO_CODEC_MAP = { copy: 'copy', aac: 'aac', mp3: 'libmp3lame', opus: 'libopus' };
+// CONTAINER_COMPAT vem de ./lib/media-utils.js.
 // Maps our codec picker values to their hardware-encoder equivalent per GPU
 // vendor. Used automatically whenever available — no user toggle. Tried in
 // this order: Nvidia (NVENC) first — most consistently reliable in the
@@ -2065,21 +2517,7 @@ function buildVideoCodecArgs(vcodec, acodec, quality, targetVideoBitrate, codecK
   return args;
 }
 
-// Parses a user-entered "HH:MM:SS", "MM:SS", or plain-seconds string into a
-// float. Used only for the target-size bitrate math — the raw string is
-// passed straight through to ffmpeg's -ss/-to, which understands all these
-// forms natively.
-function parseTimeToSeconds(str) {
-  if (!str) return null;
-  const s = String(str).trim();
-  if (!s) return null;
-  if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
-  const parts = s.split(':').map(Number);
-  if (parts.some(n => Number.isNaN(n))) return null;
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  if (parts.length === 2) return parts[0] * 60 + parts[1];
-  return null;
-}
+// parseTimeToSeconds vem de ./lib/media-utils.js.
 
 // Runs `ffmpeg -i <file>` with no output — it errors out (no output
 // specified) but not before printing the input's metadata, including
@@ -2186,8 +2624,15 @@ function parseMediaInfo(stderr, inputPath) {
 
 // Runs one ffmpeg pass, streaming progress to the renderer. Resolves with the
 // exit code and a tail of stderr (used for both progress % and error messages).
-function runConvert(args, convertId, event) {
+function runConvert(args, convertId, event, expectedDuration = null) {
   return new Promise(resolve => {
+    let settled = false;
+    const settle = (payload) => {
+      if (settled) return;
+      settled = true;
+      if (convertId) activeProcs.delete(convertId);
+      resolve(payload);
+    };
     const proc = spawn(ffmpegBin, args, { windowsHide: true });
     if (convertId) activeProcs.set(convertId, proc);
     let stderrTail = '';
@@ -2203,19 +2648,14 @@ function runConvert(args, convertId, event) {
       const tm = line.match(/time=(\d+):(\d+):(\d+\.\d+)/);
       if (tm) {
         const cur = (+tm[1]) * 3600 + (+tm[2]) * 60 + parseFloat(tm[3]);
-        const pct = duration ? Math.min(99, (cur / duration) * 100) : 0;
+        const denom = expectedDuration || duration;
+        const pct = denom ? Math.min(99, (cur / denom) * 100) : 0;
         event.sender.send('convert-progress', { type: 'progress', percent: pct });
       }
     });
 
-    proc.on('error', err => {
-      if (convertId) activeProcs.delete(convertId);
-      resolve({ code: -1, stderrTail: err.message });
-    });
-    proc.on('close', code => {
-      if (convertId) activeProcs.delete(convertId);
-      resolve({ code, stderrTail });
-    });
+    proc.on('error', err => settle({ code: -1, stderrTail: err.message }));
+    proc.on('close', code => settle({ code, stderrTail }));
   });
 }
 
@@ -2236,6 +2676,32 @@ ipcMain.handle('convert-media', async (event, opts) => {
     if (outputKind === 'video' && AUDIO_ONLY_EXTENSIONS.has(path.extname(inputPath).toLowerCase())) {
       return { success: false, error: 'Esse arquivo é de áudio e não tem imagem — não é possível convertê-lo para vídeo. Escolha "Áudio" como saída.' };
     }
+    const rawTrimStart = String(trimStart || '').trim();
+    const rawTrimEnd   = String(trimEnd || '').trim();
+    const startSec = rawTrimStart ? parseTimeToSeconds(rawTrimStart) : null;
+    const endSec   = rawTrimEnd   ? parseTimeToSeconds(rawTrimEnd)   : null;
+    if (rawTrimStart && startSec === null) {
+      return { success: false, error: 'Tempo inicial de corte inválido (use HH:MM:SS, MM:SS ou segundos).' };
+    }
+    if (rawTrimEnd && endSec === null) {
+      return { success: false, error: 'Tempo final de corte inválido (use HH:MM:SS, MM:SS ou segundos).' };
+    }
+    if (startSec != null && endSec != null && endSec <= startSec) {
+      return { success: false, error: 'O tempo final do corte deve ser maior que o tempo inicial.' };
+    }
+
+    const outContainer = outputKind === 'audio' ? null : (container || 'mp4').toLowerCase();
+    const compat = outContainer ? (CONTAINER_COMPAT[outContainer] || CONTAINER_COMPAT.mp4) : null;
+    if (compat) {
+      const vc = videoCodec || 'copy';
+      const ac = audioCodec || 'copy';
+      if (!compat.video.has(vc)) {
+        return { success: false, error: `O contêiner ${outContainer.toUpperCase()} não suporta o codec de vídeo "${vc.toUpperCase()}".` };
+      }
+      if (!compat.audio.has(ac)) {
+        return { success: false, error: `O contêiner ${outContainer.toUpperCase()} não suporta o codec de áudio "${ac.toUpperCase()}".` };
+      }
+    }
     if (targetSizeMB && outputKind === 'video' && videoCodec === 'copy') {
       return { success: false, error: 'Pra usar tamanho-alvo é preciso escolher um codec de vídeo real (H.264/H.265/VP9/AV1) — "Manter original" não recodifica, então não dá pra controlar o tamanho.' };
     }
@@ -2243,14 +2709,35 @@ ipcMain.handle('convert-media', async (event, opts) => {
       return { success: false, error: 'WAV e FLAC são sem perdas e não usam bitrate ajustável — tamanho-alvo só funciona com MP3, AAC ou OGG.' };
     }
 
+    let fullDuration = null;
+    if (targetSizeMB || startSec != null || endSec != null) {
+      fullDuration = await probeDuration(inputPath);
+      if (targetSizeMB && !fullDuration) {
+        return { success: false, error: 'Não consegui detectar a duração do arquivo pra calcular o tamanho-alvo.' };
+      }
+      if (fullDuration && startSec != null && startSec >= fullDuration) {
+        return { success: false, error: 'O início do corte é maior ou igual à duração do arquivo.' };
+      }
+    }
+
     let savePath = provided;
     if (!savePath) {
       const settings = loadSettings();
       const def = settings.lastFolder || settings.defaultFolder || undefined;
       const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { title: 'Pasta de destino', defaultPath: def, properties: ['openDirectory'] });
-      if (canceled || !filePaths[0]) return { success: false, error: 'Conversão cancelada.' };
+      if (canceled || !filePaths[0]) return { success: false, canceled: true, error: 'Conversão cancelada.' };
       savePath = filePaths[0];
       const s = loadSettings(); s.lastFolder = savePath; saveSettings(s);
+    }
+
+    let estConvertBytes = 0;
+    try {
+      const srcSize = fs.statSync(inputPath).size;
+      estConvertBytes = targetSizeMB ? Math.round(targetSizeMB * 1024 * 1024) : (outputKind === 'audio' ? Math.round(srcSize * 0.25) : srcSize);
+    } catch {}
+    const convDiskCheck = await confirmDiskSpaceIfLow(savePath, estConvertBytes, true);
+    if (!convDiskCheck.proceed) {
+      return { success: false, canceled: true, error: 'Conversão cancelada.' };
     }
 
     let outExt, cpuVcodec, gpuVcodec, acodec;
@@ -2261,8 +2748,11 @@ ipcMain.handle('convert-media', async (event, opts) => {
       acodec = AUDIO_CODEC_MAP[audioCodec] || 'copy';
       // Target-size mode needs a predictable audio bitrate to budget against —
       // "keep original" audio has an unknown size, so force a real codec.
-      if (targetSizeMB && acodec === 'copy') acodec = 'aac';
-      outExt = container || 'mp4';
+      if (targetSizeMB && acodec === 'copy') {
+        const defAudio = compat ? compat.defaultAudio : 'aac';
+        acodec = AUDIO_CODEC_MAP[defAudio] || 'aac';
+      }
+      outExt = outContainer || 'mp4';
       // Silently prefer whichever GPU vendor is actually usable on this
       // machine (Nvidia NVENC, then AMD AMF, then Intel QSV) — no prompt, no
       // setting, just use it if a probe confirms it works.
@@ -2272,18 +2762,17 @@ ipcMain.handle('convert-media', async (event, opts) => {
       }
     }
 
-    // Figure out the bitrate budget for target-size mode, based on the
-    // trimmed duration (not the whole file) when a cut range is also set.
+    // Duração efetiva do trecho a gerar (para progresso % do corte e cálculo do tamanho-alvo).
+    const effectiveStart = startSec || 0;
+    const effectiveEnd = endSec != null
+      ? (fullDuration ? Math.min(endSec, fullDuration) : endSec)
+      : fullDuration;
+    const clipDuration = effectiveEnd != null ? Math.max(0.1, effectiveEnd - effectiveStart) : null;
+
     let targetVideoBitrate = null;
     let targetAudioBitrate = null;
     if (targetSizeMB) {
-      const fullDuration = await probeDuration(inputPath);
-      if (!fullDuration) {
-        return { success: false, error: 'Não consegui detectar a duração do arquivo pra calcular o tamanho-alvo.' };
-      }
-      const startSec = parseTimeToSeconds(trimStart) || 0;
-      const endSec = parseTimeToSeconds(trimEnd);
-      const effectiveDuration = Math.max(1, (endSec != null ? endSec : fullDuration) - startSec);
+      const effectiveDuration = Math.max(1, clipDuration || fullDuration);
       const targetBits = targetSizeMB * 8 * 1024 * 1024 * 0.98; // ~2% headroom for container overhead
       if (outputKind === 'audio') {
         targetAudioBitrate = Math.max(32000, Math.floor(targetBits / effectiveDuration));
@@ -2300,9 +2789,9 @@ ipcMain.handle('convert-media', async (event, opts) => {
 
     const buildArgs = (vcodec) => {
       const args = ['-y'];
-      if (trimStart) args.push('-ss', String(trimStart));
+      if (startSec != null && startSec > 0) args.push('-ss', String(startSec));
       args.push('-i', inputPath);
-      if (trimEnd) args.push('-to', String(trimEnd));
+      if (endSec != null) args.push('-t', String(Math.max(0.1, endSec - (startSec || 0))));
       if (outputKind === 'audio') {
         const info = AUDIO_CONVERT_MAP[audioFormat] || AUDIO_CONVERT_MAP.mp3;
         args.push('-vn', '-c:a', info.codec);
@@ -2317,16 +2806,20 @@ ipcMain.handle('convert-media', async (event, opts) => {
 
     event.sender.send('convert-progress', { type: 'start' });
 
-    let result = await runConvert(buildArgs(gpuVcodec || cpuVcodec), convertId, event);
+    let result = await runConvert(buildArgs(gpuVcodec || cpuVcodec), convertId, event, clipDuration);
 
     // GPU attempt failed at runtime (busy, driver hiccup, session without a
     // display, etc.) despite the earlier probe passing — fall back to CPU
     // transparently, unless the user cancelled in the meantime.
-    if (result.code !== 0 && gpuVcodec && !canceledConvertIds.has(convertId)) {
+    if (result.code !== 0 && gpuVcodec && !(convertId && canceledConvertIds.has(convertId))) {
       event.sender.send('convert-progress', { type: 'start', message: 'GPU não respondeu, tentando novamente com CPU...' });
-      result = await runConvert(buildArgs(cpuVcodec), convertId, event);
+      result = await runConvert(buildArgs(cpuVcodec), convertId, event, clipDuration);
     }
-    canceledConvertIds.delete(convertId);
+
+    if (convertId && canceledConvertIds.has(convertId)) {
+      try { if (outPath && fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (_) {}
+      return { success: false, canceled: true, error: 'Conversão cancelada.' };
+    }
 
     if (result.code === 0) {
       event.sender.send('convert-progress', { type: 'done', outPath, folder: savePath });
@@ -2338,15 +2831,18 @@ ipcMain.handle('convert-media', async (event, opts) => {
     // arquivo quebrado mais tarde.
     try { if (outPath && fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (_) {}
 
-    const tailLines = (result.stderrTail || '').split('\n').filter(Boolean).slice(-6).join('\n');
+    const technicalDetails = sanitizeDiagnosticStderr(result.stderrTail || '');
+    const tailLines = technicalDetails.split('\n').filter(Boolean).slice(-4).join('\n');
     const errMsg = tailLines || `Erro na conversão (código ${result.code})`;
-    event.sender.send('convert-progress', { type: 'error', error: errMsg });
-    return { success: false, error: errMsg };
+    event.sender.send('convert-progress', { type: 'error', error: errMsg, technicalDetails });
+    return { success: false, error: errMsg, technicalDetails };
   } catch (e) { return { success: false, error: e.message }; }
+  finally {
+    if (convertId) canceledConvertIds.delete(convertId);
+  }
 });
 
 // ── Spotify ───────────────────────────────────────────────────────────────────
-const https = require('https');
 
 const SPOT_CLIENT_ID     = Buffer.from('YWZkNjM1YzE3NWMxNGViNTljMDgxMGMwMzIyNTNhNjk=', 'base64').toString();
 const SPOT_CLIENT_SECRET = Buffer.from('YWEzMjA2MjlhN2I3NDQwY2I3OWMwZWI4YmE0OWRhMWU=', 'base64').toString();
@@ -2367,11 +2863,13 @@ async function getSpotifyToken() {
       res.on('end', () => {
         try {
           const j = JSON.parse(data);
-          if (j.access_token) {
+          if (res.statusCode < 400 && j.access_token) {
             _spotToken = j.access_token;
             _spotTokenExp = Date.now() + (j.expires_in || 3600) * 1000;
             resolve(_spotToken);
-          } else reject(new Error('Token inválido: ' + data));
+          } else {
+            reject(new Error(`Token inválido (${res.statusCode}): ${j.error_description || j.error || data}`));
+          }
         } catch(e) { reject(e); }
       });
     });
@@ -2382,7 +2880,7 @@ async function getSpotifyToken() {
   });
 }
 
-async function spotifyApiGet(endpoint) {
+async function spotifyApiGet(endpoint, retried = false) {
   const token = await getSpotifyToken();
   return new Promise((resolve, reject) => {
     const req = https.get(`https://api.spotify.com/v1${endpoint}`, {
@@ -2390,41 +2888,63 @@ async function spotifyApiGet(endpoint) {
     }, res => {
       let data = '';
       res.on('data', d => { data += d; });
-      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+      res.on('end', () => {
+        if (res.statusCode === 401 && !retried) {
+          _spotToken = null;
+          _spotTokenExp = 0;
+          spotifyApiGet(endpoint, true).then(resolve, reject);
+          return;
+        }
+        try {
+          const j = JSON.parse(data);
+          if (res.statusCode === 401) _spotToken = null;
+          if (res.statusCode >= 400 || j.error) {
+            reject(new Error(j.error?.message || `Spotify API HTTP ${res.statusCode}`));
+            return;
+          }
+          resolve(j);
+        } catch(e) { reject(e); }
+      });
     });
     req.on('error', reject);
     req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
   });
 }
 
-function parseSpotifyUrl(url) {
-  const clean = url.split('?')[0];
-  const m = clean.match(/spotify\.com\/(?:intl-[^/]+\/)?(?:track|album|playlist)\/([A-Za-z0-9]+)/);
-  if (!m) return null;
-  const type = clean.includes('/track/') ? 'track' : clean.includes('/album/') ? 'album' : 'playlist';
-  return { type, id: m[1] };
-}
+// parseSpotifyUrl vem de ./lib/media-utils.js.
 
 async function getSpotifyTracks(url) {
   const parsed = parseSpotifyUrl(url);
   if (!parsed) throw new Error('URL do Spotify inválida');
+  if (parsed.type === 'unsupported') {
+    throw new Error('Podcasts/episódios do Spotify não são suportados — use um link de música, álbum ou playlist.');
+  }
 
   if (parsed.type === 'track') {
     const t = await spotifyApiGet(`/tracks/${parsed.id}`);
     const thumbnail = t.album?.images?.[0]?.url || '';
     return {
       name: t.name, type: 'track',
+      artist: t.artists?.map(a => a.name).join(', ') || '',
       thumbnail,
-      tracks: [{ title: t.name, artists: t.artists?.map(a => a.name).join(', ') || '', duration: t.duration_ms, thumbnail }]
+      tracks: [{ id: t.id || parsed.id, title: t.name, artists: t.artists?.map(a => a.name).join(', ') || '', duration: t.duration_ms, thumbnail }]
     };
   }
   if (parsed.type === 'album') {
     const a = await spotifyApiGet(`/albums/${parsed.id}`);
     const thumbnail = a.images?.[0]?.url || '';
+    let items = a.tracks?.items || [];
+    let next = a.tracks?.next;
+    while (next) {
+      const page = await spotifyApiGet(next.replace('https://api.spotify.com/v1', ''));
+      items = [...items, ...(page.items || [])];
+      next = page.next;
+    }
     return {
       name: a.name, type: 'album',
+      artist: a.artists?.map(ar => ar.name).join(', ') || '',
       thumbnail,
-      tracks: (a.tracks?.items || []).map(t => ({ title: t.name, artists: t.artists?.map(a => a.name).join(', ') || '', duration: t.duration_ms, thumbnail }))
+      tracks: items.filter(t => t?.name).map(t => ({ id: t.id || null, title: t.name, artists: t.artists?.map(ar => ar.name).join(', ') || '', duration: t.duration_ms, thumbnail }))
     };
   }
   const pl = await spotifyApiGet(`/playlists/${parsed.id}`);
@@ -2437,11 +2957,13 @@ async function getSpotifyTracks(url) {
   }
   return {
     name: pl.name, type: 'playlist',
+    artist: pl.owner?.display_name || '',
     thumbnail: pl.images?.[0]?.url || '',
     // Playlists can mix tracks from many different albums, so each track
     // carries its own album art instead of reusing the playlist's cover —
     // falls back to the playlist cover only if a track is missing one.
     tracks: items.filter(i => i?.track).map(i => ({
+      id: i.track.id || null,
       title: i.track.name,
       artists: i.track.artists?.map(a => a.name).join(', ') || '',
       duration: i.track.duration_ms,
@@ -2451,36 +2973,79 @@ async function getSpotifyTracks(url) {
 }
 
 ipcMain.handle('spotify-get-info', async (_, { url }) => {
+  if (!isSafeMediaUrl(url)) return BAD_URL;
+  const parsed = parseSpotifyUrl(url);
+  if (!parsed) return { success: false, error: 'Link do Spotify inválido — use um link de música, álbum ou playlist.' };
+  if (parsed.type === 'unsupported') {
+    return { success: false, error: 'Podcasts/episódios do Spotify não são suportados — use um link de música, álbum ou playlist.' };
+  }
   try {
+    if (parsed.type === 'track') {
+      const t = await spotifyApiGet(`/tracks/${parsed.id}`);
+      return {
+        success: true,
+        name: t.name,
+        type: 'track',
+        artist: t.artists?.map(a => a.name).join(', ') || '',
+        thumbnail: t.album?.images?.[0]?.url || '',
+        count: 1,
+      };
+    }
+    if (parsed.type === 'album') {
+      const a = await spotifyApiGet(`/albums/${parsed.id}`);
+      return {
+        success: true,
+        name: a.name,
+        type: 'album',
+        artist: a.artists?.map(ar => ar.name).join(', ') || '',
+        thumbnail: a.images?.[0]?.url || '',
+        count: a.tracks?.total || 1,
+      };
+    }
+    const pl = await spotifyApiGet(`/playlists/${parsed.id}?fields=name,owner(display_name),images,tracks(total)`);
+    return {
+      success: true,
+      name: pl.name,
+      type: 'playlist',
+      artist: pl.owner?.display_name || '',
+      thumbnail: pl.images?.[0]?.url || '',
+      count: pl.tracks?.total || 1,
+    };
+  } catch {
+    // Fallback pra oembed caso a Web API falhe temporariamente.
     const cleanUrl = url.split('?')[0];
-    const type = cleanUrl.includes('/track/') ? 'track' : cleanUrl.includes('/album/') ? 'album' : 'playlist';
     return new Promise(resolve => {
       const req = https.get(`https://open.spotify.com/oembed?url=${encodeURIComponent(cleanUrl)}`,
         { headers: { 'User-Agent': 'Mozilla/5.0' } }, res => {
+          if (res.statusCode >= 400) {
+            res.resume();
+            resolve({ success: false, error: `Spotify respondeu HTTP ${res.statusCode}.` });
+            return;
+          }
           let data = '';
           res.on('data', d => { data += d; });
           res.on('end', () => {
             try {
               const j = JSON.parse(data);
-              resolve({ success: true, name: j.title || cleanUrl, type, artist: '', thumbnail: j.thumbnail_url || '', count: 1 });
+              resolve({ success: true, name: j.title || cleanUrl, type: parsed.type, artist: '', thumbnail: j.thumbnail_url || '', count: 1 });
             } catch { resolve({ success: false, error: 'Erro ao parsear resposta do Spotify.' }); }
           });
         });
       req.on('error', e => resolve({ success: false, error: `Erro de rede: ${e.message}` }));
       req.setTimeout(12000, () => { req.destroy(); resolve({ success: false, error: 'Timeout ao buscar info.' }); });
     });
-  } catch(e) { return { success: false, error: e.message }; }
+  }
 });
 
-// Downloads `thumbnailUrl` to a temp file and re-muxes it into mp3Path as
-// ID3 cover art (via ffmpeg, no re-encode). Unlike yt-dlp's --embed-thumbnail
+// Downloads `thumbnailUrl` to a temp file and re-muxes it into audioPath as
+// cover art (via ffmpeg, no re-encode). Unlike yt-dlp's --embed-thumbnail
 // (which would embed the YouTube search result's own thumbnail — often the
 // wrong image for a plain audio search), this uses the real Spotify album
 // art we already have the URL for. Failures here are non-fatal: the song
 // itself already downloaded fine, it just won't have cover art.
-function embedAlbumArt(mp3Path, thumbnailUrl, ffmpegPath) {
+function embedAlbumArt(audioPath, ext, thumbnailUrl, ffmpegPath) {
   return new Promise(resolve => {
-    if (!thumbnailUrl) return resolve(false);
+    if (!thumbnailUrl || ext === 'ogg') return resolve(false);
     const tmpImg = path.join(os.tmpdir(), `cover_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`);
     const cleanupImg = () => fs.unlink(tmpImg, () => {});
 
@@ -2490,16 +3055,18 @@ function embedAlbumArt(mp3Path, thumbnailUrl, ffmpegPath) {
       res.pipe(file);
       file.on('finish', () => {
         file.close(() => {
-          const tmpOut = mp3Path + '.cover.tmp.mp3';
+          const tmpOut = audioPath + `.cover.tmp.${ext}`;
           const args = [
-            '-y', '-i', mp3Path, '-i', tmpImg,
+            '-y', '-i', audioPath, '-i', tmpImg,
             '-map', '0:a', '-map', '1:0', '-c', 'copy',
-            '-id3v2_version', '3',
+          ];
+          if (ext === 'mp3') args.push('-id3v2_version', '3');
+          args.push(
             '-metadata:s:v', 'title=Album cover',
             '-metadata:s:v', 'comment=Cover (front)',
             '-disposition:v:0', 'attached_pic',
             tmpOut,
-          ];
+          );
           let proc;
           try { proc = spawn(ffmpegPath, args, { windowsHide: true }); }
           catch { cleanupImg(); return resolve(false); }
@@ -2507,7 +3074,7 @@ function embedAlbumArt(mp3Path, thumbnailUrl, ffmpegPath) {
           proc.on('close', code => {
             cleanupImg();
             if (code !== 0) { fs.unlink(tmpOut, () => {}); return resolve(false); }
-            fs.rename(tmpOut, mp3Path, err => resolve(!err));
+            fs.rename(tmpOut, audioPath, err => resolve(!err));
           });
         });
       });
@@ -2518,26 +3085,42 @@ function embedAlbumArt(mp3Path, thumbnailUrl, ffmpegPath) {
   });
 }
 
-function downloadSpotifyTrack(track, savePath, ffmpegPath, downloadId, index, onProgress) {
+// SPOT_FMT_MAP e SPOT_QUALITY_MAP vêm de ./lib/media-utils.js.
+
+function downloadSpotifyTrack(track, savePath, ffmpegPath, downloadId, index, { format, quality }, isCanceledFn, onProgress) {
   return new Promise(resolve => {
-    const safeName = `${track.artists} - ${track.title}`.replace(/[<>:"|?*\/\\]/g, '_').trim();
+    const fmtSpec = SPOT_FMT_MAP[format] || SPOT_FMT_MAP.mp3;
+    const ytQuality = fmtSpec.ext === 'flac' ? '0' : (SPOT_QUALITY_MAP[quality] || '320K');
+    const rawLabel = track.artists ? `${track.artists} - ${track.title}` : (track.title || `track_${index + 1}`);
+    const safeName = sanitizeOutputFilename(rawLabel, `track_${index + 1}`);
     const outputTemplate = path.join(savePath, safeName + '.%(ext)s');
-    const outputPath = path.join(savePath, safeName + '.mp3');
-    const query = `ytsearch1:${track.artists} ${track.title} audio`;
+    const outputPath = path.join(savePath, `${safeName}.${fmtSpec.ext}`);
+    const queryText = track.artists ? `${track.artists} ${track.title} audio` : `${track.title} audio`;
+    const query = `ytsearch1:${queryText}`;
 
     const args = [
-      query, '--no-warnings',
-      '-x', '--audio-format', 'mp3', '--audio-quality', '0',
+      '--no-warnings',
+      '-x', '--audio-format', fmtSpec.ytFmt, '--audio-quality', ytQuality,
+      '--embed-metadata',
       '--output', outputTemplate,
       '--ffmpeg-location', ffmpegPath,
       '--newline', '--no-playlist',
     ];
+    pushRateLimitArgs(args);
+    pushFilenameSafetyArgs(args);
+    args.push('--', query);
 
-    const proc = spawn(ytDlpBin, args, { windowsHide: true });
     const procKey = downloadId ? `${downloadId}_track_${index}` : null;
-    if (procKey) activeProcs.set(procKey, proc);
+    const proc = spawnDownload(args, procKey);
 
     let done = false, stderr = '';
+    const settle = (ok, errText = '') => {
+      if (done) return;
+      done = true;
+      if (procKey) activeProcs.delete(procKey);
+      resolve({ ok, stderr: errText });
+    };
+
     proc.stdout.on('data', d => {
       const line = d.toString();
       const match = line.match(/\[download\]\s+(\d+\.?\d*)%.*?at\s+([\d.\w]+\/s).*?ETA\s+([\d:]+)/);
@@ -2551,126 +3134,162 @@ function downloadSpotifyTrack(track, savePath, ffmpegPath, downloadId, index, on
         onProgress({ phase: 'converting', percent: 95, speed: '', eta: '' });
       }
     });
-    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.stderr.on('data', d => { stderr = (stderr + d.toString()).slice(-8000); });
     proc.on('close', async code => {
-      done = true;
-      // Sem esse delete a chave ficava pra sempre no activeProcs — e como o
-      // auto-update usa "activeProcs vazio" pra saber que pode instalar, uma
-      // única música baixada travava a instalação da atualização até o app ser
-      // reiniciado.
+      if (done) return;
       if (procKey) activeProcs.delete(procKey);
-      const ok = code === 0 && !stderr.toLowerCase().includes('error:');
+      const ok = !isCanceledFn() && code === 0 && !stderr.toLowerCase().includes('error:');
       if (ok && track.thumbnail && fs.existsSync(outputPath)) {
-        await embedAlbumArt(outputPath, track.thumbnail, ffmpegPath);
+        await embedAlbumArt(outputPath, fmtSpec.ext, track.thumbnail, ffmpegPath);
       }
-      resolve(ok);
+      settle(ok, stderr);
     });
-    proc.on('error', () => {
-      if (procKey) activeProcs.delete(procKey);
-      if (!done) { done = true; resolve(false); }
-    });
+    proc.on('error', err => settle(false, err?.message || ''));
   });
 }
 
-ipcMain.handle('spotify-download', async (event, { url, format, quality, downloadId, savePath: provided }) => {
+ipcMain.handle('spotify-download', async (event, { url, format, quality, downloadId, savePath: provided, silentGlobalProgress }) => {
+  if (!isSafeMediaUrl(url)) return BAD_URL;
+  const isCanceled = () => !!(downloadId && canceledSpotifyIds.has(downloadId));
+  const outFormat  = SPOT_FMT_MAP[format] ? format : 'mp3';
+  const outQuality = outFormat === 'flac' ? 'lossless' : (SPOT_QUALITY_MAP[quality] ? quality : '320k');
   try {
     const settings = loadSettings();
     let savePath = provided;
     if (!savePath) {
       const def = settings.lastFolder || settings.defaultFolder || undefined;
       const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { title: 'Pasta de destino', defaultPath: def, properties: ['openDirectory'] });
-      if (canceled || !filePaths[0]) return { success: false, error: 'Download cancelado.' };
+      if (canceled || !filePaths[0]) return { success: false, canceled: true, error: 'Download cancelado.' };
       savePath = filePaths[0];
       const s = loadSettings(); s.lastFolder = savePath; saveSettings(s);
     }
 
+    const diskCheck = await confirmDiskSpaceIfLow(savePath, 0, !silentGlobalProgress);
+    if (!diskCheck.proceed) {
+      return { success: false, canceled: !!diskCheck.canceledByUser, error: diskCheck.error || 'Espaço em disco insuficiente.' };
+    }
+
     if (downloadId) activeProcs.set(downloadId, { pid: null });
-    event.sender.send('spotify-progress', { type: 'start' });
-    event.sender.send('spotify-progress', { type: 'progress', percent: 5, label: 'Buscando informações...' });
+    if (!silentGlobalProgress) {
+      event.sender.send('spotify-progress', { type: 'start' });
+      event.sender.send('spotify-progress', { type: 'progress', percent: 5, label: 'Buscando informações...' });
+    }
 
     let spotData;
     try {
       spotData = await getSpotifyTracks(url);
     } catch(e) {
-      if (downloadId) activeProcs.delete(downloadId);
+      if (isCanceled()) return { success: false, canceled: true, error: 'Download cancelado.' };
       return { success: false, error: `Erro na API do Spotify: ${e.message}` };
     }
+    if (isCanceled()) return { success: false, canceled: true, error: 'Download cancelado.' };
 
     const tracks = spotData.tracks.map((t, i) => ({ ...t, index: i }));
     const total  = tracks.length;
+    if (!total) return { success: false, error: 'Nenhuma música encontrada nesse link do Spotify.' };
     const ffmpegPath = ffmpegBin;
 
-    event.sender.send('spotify-progress', { type: 'progress', percent: 10, label: `${total} música(s) encontrada(s)` });
+    if (!silentGlobalProgress) {
+      event.sender.send('spotify-progress', { type: 'progress', percent: 10, label: `${total} música(s) encontrada(s)` });
+    }
 
-    let downloaded = 0, errors = 0;
+    let downloaded = 0, errors = 0, lastTrackStderr = '';
     const concurrency = Math.max(1, parseInt(settings.concurrentDownloads) || 3);
 
-    const runWorker = () => new Promise(resolveWorker => {
-      const processNext = async () => {
-        if (tracks.length === 0) return resolveWorker();
-        if (downloadId && !activeProcs.has(downloadId)) return resolveWorker();
-
+    const runWorker = async () => {
+      while (tracks.length && !isCanceled()) {
         const track = tracks.shift();
-        event.sender.send('spotify-log', `Baixando: ${track.artists} - ${track.title}`);
+        const displayName = track.artists ? `${track.artists} - ${track.title}` : track.title;
+        if (!silentGlobalProgress) event.sender.send('spotify-log', `Baixando: ${displayName}`);
 
-        const ok = await downloadSpotifyTrack(track, savePath, ffmpegPath, downloadId, track.index, data => {
-          event.sender.send('spotify-progress', {
-            type: 'track-progress', index: track.index,
-            phase: data.phase, percent: data.percent,
-            speed: data.speed, eta: data.eta,
-            title: `${track.artists} - ${track.title}`
-          });
-        });
+        const { ok, stderr } = await downloadSpotifyTrack(
+          track, savePath, ffmpegPath, downloadId, track.index,
+          { format: outFormat, quality: outQuality },
+          isCanceled,
+          data => {
+            if (!silentGlobalProgress) {
+              event.sender.send('spotify-progress', {
+                type: 'track-progress', index: track.index,
+                phase: data.phase, percent: data.percent,
+                speed: data.speed, eta: data.eta,
+                title: displayName
+              });
+            } else if (downloadId && total === 1) {
+              if (data.phase === 'downloading') {
+                event.sender.send(`download-progress-${downloadId}`, { type: 'progress', percent: data.percent || 0, speed: data.speed || '', eta: data.eta || '' });
+              } else if (data.phase === 'converting') {
+                event.sender.send(`download-progress-${downloadId}`, { type: 'converting', label: `Convertendo ${outFormat.toUpperCase()}...` });
+              }
+            }
+          }
+        );
+
+        if (isCanceled()) break;
 
         if (ok) {
           downloaded++;
-          event.sender.send('spotify-progress', { type: 'track-progress', index: track.index, phase: 'done' });
         } else {
           errors++;
-          event.sender.send('spotify-log', `Falhou: ${track.title}`);
-          event.sender.send('spotify-progress', { type: 'track-progress', index: track.index, phase: 'done' });
+          if (stderr) lastTrackStderr = stderr;
+          if (!silentGlobalProgress) event.sender.send('spotify-log', `Falhou: ${track.title}`);
         }
 
-        event.sender.send('spotify-progress', {
-          type: 'progress',
-          percent: 10 + Math.round((downloaded / total) * 90),
-          label: `Concluídos: ${downloaded} de ${total}`
-        });
-        setTimeout(processNext, 500);
-      };
-      processNext();
-    });
+        if (!silentGlobalProgress) {
+          event.sender.send('spotify-progress', { type: 'track-progress', index: track.index, phase: 'done' });
+          const pct = 10 + Math.round(((downloaded + errors) / total) * 90);
+          event.sender.send('spotify-progress', {
+            type: 'progress',
+            percent: Math.min(100, pct),
+            label: `Concluídos: ${downloaded} de ${total}${errors ? ` · ${errors} falha(s)` : ''}`
+          });
+        } else if (downloadId && total > 1) {
+          event.sender.send(`download-progress-${downloadId}`, {
+            type: 'progress',
+            percent: Math.round(((downloaded + errors) / total) * 100),
+            speed: '',
+            eta: `${downloaded}/${total}`
+          });
+        }
+      }
+    };
 
-    const workers = [];
-    for (let i = 0; i < concurrency; i++) workers.push(runWorker());
-    await Promise.all(workers);
+    await Promise.all(Array.from({ length: Math.min(concurrency, total) }, runWorker));
 
-    if (downloadId) activeProcs.delete(downloadId);
+    if (isCanceled()) {
+      return { success: false, canceled: true, error: 'Download cancelado.' };
+    }
 
     const label = total > 1 ? `${downloaded}/${total}` : 'concluído';
-    addToHistory({
-      title: `Spotify: ${spotData.name}`,
-      // Sempre mp3 320k na prática (-x --audio-format mp3 --audio-quality 0);
-      // antes gravava o que o renderer tivesse mandado, o que fazia o histórico
-      // mentir sobre a qualidade do arquivo.
-      url, format: 'mp3', quality: '320k',
-      folder: savePath, date: new Date().toISOString(),
-      status: downloaded > 0 ? 'success' : 'error'
-    });
+    try {
+      addToHistory({
+        title: `Spotify: ${spotData.name}`,
+        url, format: outFormat, quality: outQuality,
+        folder: savePath, date: new Date().toISOString(),
+        status: downloaded > 0 ? 'success' : 'error'
+      });
+    } catch (e) { console.warn('[histórico] não registrei Spotify:', e.message); }
 
     if (downloaded > 0) {
       if (Notification.isSupported()) new Notification({ title: 'gameshmm downloader', body: `✅ Spotify — ${label}` }).show();
-      event.sender.send('spotify-progress', { type: 'done', folder: savePath, downloaded, total });
+      if (!silentGlobalProgress) event.sender.send('spotify-progress', { type: 'done', folder: savePath, downloaded, total });
       return { success: true, folder: savePath, downloaded, total };
     } else {
       const errMsg = 'Nenhuma música foi baixada. Verifique a conexão.';
-      event.sender.send('spotify-progress', { type: 'error', label: errMsg });
-      return { success: false, error: errMsg };
+      const technicalDetails = sanitizeDiagnosticStderr(lastTrackStderr);
+      if (!silentGlobalProgress) event.sender.send('spotify-progress', { type: 'error', label: errMsg });
+      return { success: false, error: errMsg, technicalDetails };
     }
   } catch(e) { return { success: false, error: e.message }; }
+  finally {
+    if (downloadId) {
+      activeProcs.delete(downloadId);
+      canceledSpotifyIds.delete(downloadId);
+    }
+  }
 });
 
 ipcMain.handle('cancel-spotify', (_, id) => {
+  if (id) canceledSpotifyIds.add(id);
   const p = activeProcs.get(id);
   if (p) { killProc(p); activeProcs.delete(id); }
   const subKeys = [...activeProcs.keys()].filter(k => k.startsWith(`${id}_track_`));

@@ -70,9 +70,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getRuntimeInfo:      () => ipcRenderer.invoke('get-runtime-info'),
   relaunchUnelevated:  () => ipcRenderer.invoke('relaunch-unelevated'),
 
-  // Fila salva em disco entre sessões
+  // Fila salva em disco entre sessões + expansão + agendamento
   getQueue:  () => ipcRenderer.invoke('get-queue'),
   saveQueue: (items) => ipcRenderer.invoke('save-queue', items),
+  expandQueueItems: (o) => ipcRenderer.invoke('expand-queue-items', o),
+  getQueueSchedule: () => ipcRenderer.invoke('get-queue-schedule'),
+  setQueueSchedule: (o) => ipcRenderer.invoke('set-queue-schedule', o),
+  onTriggerScheduledQueue: (cb) => ipcRenderer.on('trigger-scheduled-queue', (_, d) => cb(d)),
+  onQueueScheduleExpired:  (cb) => ipcRenderer.on('queue-schedule-expired',  (_, d) => cb(d)),
+
+  // Espaço em disco
+  checkDiskSpace: (o) => ipcRenderer.invoke('check-disk-space', o),
 
   // Checagem automática de yt-dlp desatualizado
   checkYtdlpVersion:   () => ipcRenderer.invoke('check-ytdlp-version'),

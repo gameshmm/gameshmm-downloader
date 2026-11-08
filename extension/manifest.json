@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "gameshmm downloader – Baixar vídeos",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Coloca um botão no vídeo do YouTube, TikTok, X/Twitter, Instagram e Spotify pra mandar direto pro gameshmm downloader, e conecta o login do YouTube ao app.",
   "icons": {
     "16": "icons/icon16.png",
@@ -20,37 +20,80 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["storage", "cookies"],
-  "host_permissions": ["https://*.google.com/*", "https://*.youtube.com/*"],
+  "permissions": [
+    "storage",
+    "cookies",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://*.google.com/*",
+    "https://*.youtube.com/*",
+    "http://127.0.0.1/*"
+  ],
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://www.tiktok.com/*"],
-      "js": ["shared.js", "tiktok.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://www.tiktok.com/*"
+      ],
+      "js": [
+        "shared.js",
+        "tiktok.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://twitter.com/*", "https://x.com/*"],
-      "js": ["shared.js", "twitter.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://twitter.com/*",
+        "https://x.com/*"
+      ],
+      "js": [
+        "shared.js",
+        "twitter.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://www.instagram.com/*"],
-      "js": ["shared.js", "instagram.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://www.instagram.com/*"
+      ],
+      "js": [
+        "shared.js",
+        "instagram.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://open.spotify.com/*"],
-      "js": ["shared.js", "spotify.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://open.spotify.com/*"
+      ],
+      "js": [
+        "shared.js",
+        "spotify.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
   ]

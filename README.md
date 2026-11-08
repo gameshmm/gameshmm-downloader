@@ -6,7 +6,7 @@
 
 **Baixe e converta vídeos e músicas de mais de 1000 sites, direto do seu computador.**
 
-[![Versão](https://img.shields.io/badge/vers%C3%A3o-2.9.3-blueviolet)](CHANGELOG.md)
+[![Versão](https://img.shields.io/badge/vers%C3%A3o-2.16.0-blueviolet)](CHANGELOG.md)
 [![Plataforma](https://img.shields.io/badge/plataforma-Windows-0078D6?logo=windows&logoColor=white)](#-instalação)
 [![Licença](https://img.shields.io/badge/licença-MIT-green)](#-licença)
 [![Electron](https://img.shields.io/badge/Electron-41-47848F?logo=electron&logoColor=white)](#-stack-tecnológica)
@@ -81,7 +81,7 @@ Para baixar direto da página do site, sem copiar link:
 | Conversão de mídia | [ffmpeg](https://ffmpeg.org/) (via `ffmpeg-static`), com aceleração por GPU |
 | Metadados do Spotify | API oficial do Spotify |
 | Atualizações automáticas | [electron-updater](https://www.electron.build/auto-update) |
-| Extensão de navegador | JavaScript puro, Manifest V3 (Chrome/Edge) e Manifest V2 (Firefox) |
+| Extensão de navegador | JavaScript puro, Manifest V3 (Chrome/Edge e Firefox) |
 
 ## 📁 Estrutura do projeto
 
@@ -89,10 +89,13 @@ Para baixar direto da página do site, sem copiar link:
 ├── main.js               # Processo principal do Electron (janela, downloads, conversão, IPC)
 ├── preload.js             # Ponte segura entre main e renderer
 ├── renderer.js             # Lógica da interface
+├── ui-fx.js                # Efeitos visuais, estimativas e camada auxiliar da interface
 ├── index.html / index.css  # Interface do app
+├── lib/                    # Utilitários compartilhados entre main, renderer e testes
+├── test/                   # Suíte de testes automatizados (node --test)
 ├── scripts/                # Scripts auxiliares de build/release
 ├── extension/               # Extensão para Chrome/Edge (Manifest V3)
-├── extension-firefox/        # Extensão para Firefox (Manifest V2)
+├── extension-firefox/        # Extensão para Firefox (Manifest V3)
 ├── website/                # Site/landing page do projeto
 └── assets/                 # Ícones do app
 ```
@@ -104,6 +107,7 @@ Pré-requisitos: [Node.js](https://nodejs.org/) e npm.
 ```bash
 npm install
 npm start
+npm test   # executa a suíte de testes
 ```
 
 ## 📦 Build

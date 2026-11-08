@@ -4,6 +4,22 @@ Formato: cada versão nova adiciona uma seção `## versão - título curto` com
 A seção da versão instalada aparece automaticamente para o usuário na primeira vez que ele abre
 essa versão (ver `getChangelogUpdateIfAny` em `main.js`).
 
+## 2.16.0 - Bridge com extensão, agendador da fila, faixa de áudio e diagnóstico
+
+**Novidades**
+- **Seleção de faixa de áudio multilíngue**: detecta vídeos com áudio original/dublado em vários idiomas no YouTube e permite escolher a faixa desejada no card de download e na fila, além de exibir a disponibilidade de legendas.
+- **Bridge HTTP local com as extensões (1.6.0)**: quando o app está aberto, as extensões de Chrome/Edge e Firefox enviam links e conectam o login do YouTube direto pela loopback (`127.0.0.1`) com confirmação na hora e suporte a enviar a aba atual direto pelo popup — mantendo o protocolo `gameshmm-downloader://` como fallback automático quando o app está fechado.
+- **Agendador da Fila ("Baixar mais tarde")**: agende um horário e pasta de destino na aba Fila para iniciar os downloads automaticamente em segundo plano, respeitando a ação de energia pós-conclusão.
+- **Fila com controles por item e expansão**: altere formato, qualidade e áudio de cada item diretamente na fila e expanda playlists do YouTube e álbuns/playlists do Spotify em faixas individuais.
+- **Diagnóstico técnico e retentativa compatível**: nova caixa colapsável **"Ver detalhes técnicos"** nos cards de erro (com mascaramento automático de cookies/tokens e cópia rápida) e botão de 1 clique **"Tentar em MP4 1080p compatível"** para erros de formato/codec.
+- **Verificação prévia de espaço em disco**: checa o espaço livre no destino antes de downloads, playlists, Spotify, conversões e lotes da fila, exibindo o espaço disponível em **Configurações → Sistema**.
+- **Suíte de testes automatizados (`npm test`)**: testes para utilitários de mídia, validação da bridge HTTP local, integração real com FFmpeg e integridade de UI/IPC.
+
+**Correções**
+- **Conversor de mídia**: validação e ajuste automático de combinações incompatíveis entre contêiner (MP4, MKV, WebM, AVI, MOV) e codecs, além de validação rigorosa dos tempos de corte.
+- **Cancelamento, fila e troca de janela**: controle individual por ID para evitar condições de corrida ao cancelar ou iniciar downloads em sequência, proteção contra abertura de links da área de transferência durante downloads ativos, proteção no drag-and-drop da fila e normalização ampliada de parâmetros de rastreamento (`fbclid`, `igsh`, `gclid`) na detecção de duplicados.
+- **Extensão e tema**: remove caminhos não suportados de podcast/show no detector do Spotify na extensão, sincroniza o botão "Conectar ao app" com o estado real do login no app e corrige alternância do tema de Halloween e recarga de perfis salvos.
+
 ## 2.15.0 - Seleção de Codec de Vídeo (H.264, VP9, AV1)
 
 - **Escolha opcional de codec de vídeo**: adicionado seletor de codec ao lado da escolha de contêiner (MP4/MKV) no card de download. Por padrão o app continua no modo "Auto · melhor" (padrão do site), mas agora você pode alternar facilmente para "H.264 · compatível" (AVC), "VP9" ou "AV1" quando precisar.

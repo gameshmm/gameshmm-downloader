@@ -1,10 +1,11 @@
 {
   "name": "gameshmm-downloader",
-  "version": "2.15.0",
+  "version": "2.16.0",
   "description": "gameshmm downloader — YouTube, Spotify, TikTok, Instagram, X, Twitch e mais de 1000 sites",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "test": "node --test test/*.test.js",
     "icon": "node generate-icon.js",
     "pack": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --dir --win",
     "build": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win",
@@ -32,6 +33,7 @@
       "index.html",
       "index.css",
       "ui-fx.js",
+      "lib/**",
       "CHANGELOG.md",
       "assets/**",
       "node_modules/**/*"

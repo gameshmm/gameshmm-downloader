@@ -8,6 +8,7 @@
   'use strict';
   const root = document.documentElement;
   const $ = (s, r = document) => r.querySelector(s);
+  const byId = (id) => document.getElementById(id);
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch { /* sem storage: só não lembra */ } },
@@ -67,9 +68,7 @@
     halloweenActive = isHalloweenActive();
     if (halloweenActive) {
       root.setAttribute('data-halloween', 'on');
-      if (prefs.hue === DEFAULT_H) {
-        root.style.setProperty('--h', String(HALLOWEEN_HUE));
-      }
+      root.style.setProperty('--h', String(prefs.hue === DEFAULT_H ? HALLOWEEN_HUE : prefs.hue));
     } else {
       root.removeAttribute('data-halloween');
       root.style.setProperty('--h', String(prefs.hue));
@@ -92,6 +91,12 @@
       }
     }
   }
+  byId('ui-halloween-toggle')?.addEventListener('change', (e) => {
+    const checked = !!e.target.checked;
+    const mode = checked ? (isHalloweenSeason() ? 'auto' : 'on') : (isHalloweenSeason() ? 'off' : 'auto');
+    store.set('gdl.halloween', mode);
+    syncHalloween();
+  });
   syncHalloween();
 
 
@@ -182,7 +187,6 @@
 
   /* ── Aba Download ─────────────────────────────────────────────── */
   const api = window.electronAPI || {};
-  const byId = (id) => document.getElementById(id);
   const gdl = () => window.__gdl || {};   // estado do renderer.js (somente leitura)
 
   // Plataformas: faixa contínua; passar o mouse tinge a página, clicar mostra como é o link
@@ -277,7 +281,7 @@
     const fm = fmtsOf(); if (!fm.length) return 0;
     const f = chosen || (step.best ? fm[0] : fm.find(x => x.height <= step.h));
     if (!f || !f.size) return 0;
-    return f.size + (Number(gdl().audioSize) || 0);
+    return f.size + (f.hasAudio ? 0 : (Number(gdl().audioSize) || 0));
   }
 
   // Qualidade do áudio (MP3): 128 / 192 / 256 / 320 kbps
@@ -368,7 +372,7 @@
   }
   subsEl?.addEventListener('change', () => saveCfg({ subsMode: subsEl.checked ? (['embed', 'file'].includes(cfg.subsMode) ? cfg.subsMode : 'embed') : 'off' }));
   sbEl?.addEventListener('change', () => saveCfg({ sponsorblock: sbEl.checked ? ((cfg.sponsorblock && cfg.sponsorblock !== 'off') ? cfg.sponsorblock : 'sponsor') : 'off' }));
-  byId('btn-save-settings')?.addEventListener('click', () => setTimeout(loadCfg, 600));
+  window.addEventListener('gdl-settings-loaded', loadCfg);
   loadCfg();
 
   // Perfis de download: combinações prontas de formato / qualidade / contêiner / áudio (/ legendas)
@@ -504,7 +508,7 @@
     subsEl?.addEventListener('change', drop); sbEl?.addEventListener('change', drop); qSel?.addEventListener('quality-sync', drop);
     const vpp = byId('video-preview'); if (vpp) new MutationObserver(() => { if (vpp.classList.contains('hidden')) drop(); }).observe(vpp, { attributes: true, attributeFilter: ['class'] });
     renderProfiles(); loadProfiles();
-    byId('btn-save-settings')?.addEventListener('click', () => setTimeout(loadProfiles, 600));
+    window.addEventListener('gdl-settings-loaded', loadProfiles);
   }
 
   // Progresso grande: porcentagem + estado (baixando / concluído / erro) a partir da barra do app
@@ -589,7 +593,15 @@
     range.addEventListener('input', () => { brSel.value = BR[Number(range.value)]; brSel.dispatchEvent(new Event('change', { bubbles: true })); paintBr(); });
 
     // Estimativa da saída (aproximada, só pra dar noção de tamanho)
-    const secs = (t) => { t = (t || '').trim(); if (!t) return null; const p = t.split(':').map(Number); if (p.some(n => !isFinite(n) || n < 0) || p.length > 3) return null; return p.reduce((a, n) => a * 60 + n, 0); };
+    const secs = (t) => {
+      t = (t || '').trim();
+      if (!t) return null;
+      const parts = t.split(':');
+      if (parts.length > 3 || parts.some(x => !/^\d+(\.\d+)?$/.test(x))) return null;
+      const nums = parts.map(Number);
+      if (nums.some(n => !isFinite(n) || n < 0)) return null;
+      return nums.reduce((a, n) => a * 60 + n, 0);
+    };
     const fmtSize = (b) => b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : b >= 1048576 ? (b / 1048576).toFixed(b >= 1.05e8 ? 0 : 1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
     const EFF = { h264: 1, avc1: 1, h265: .6, hevc: .6, vp9: .65, av1: .5, mpeg4: 1.6, mpeg2video: 2.2, vp8: 1.4 };
     const estEl = byId('conv-est'), estNote = byId('conv-est-note');
@@ -602,22 +614,37 @@
       aOpts.classList.toggle('off', tgt > 0);
       let out = '—', note = 'escolha um arquivo';
       if (info && info.duration) {
-        let dur = info.duration; const a = secs(tStart.value) || 0, b = secs(tEnd.value);
-        dur = Math.max(1, Math.min(b != null && b > a ? b : dur, info.duration) - a);
-        const frac = dur / info.duration;
-        let bytes = null;
-        if (tgt > 0) { bytes = tgt * 1048576; note = 'tamanho alvo'; }
-        else if (audio) {
-          const f = afmt.value, kbps = f === 'wav' ? 1411 : f === 'flac' ? 800 : parseInt(brSel.value, 10) || 192;
-          bytes = kbps * 125 * dur; note = (f === 'wav' || f === 'flac') ? 'sem perdas · ' + f.toUpperCase() : `${kbps} kbps · ${f.toUpperCase()}`;
-        } else if (info.sizeBytes) {
-          const src = EFF[(info.video?.codec || '').toLowerCase()] || 1.2, dst = EFF[vcodec.value] || 1;
-          const q = vcodec.value === 'copy' ? 1 : ({ high: 1.6, default: 1, low: .6 }[qSel2.value] || 1);
-          bytes = vcodec.value === 'copy' ? info.sizeBytes * frac : info.sizeBytes * frac * (dst / src) * q;
-          note = 'aproximado';
+        const rawStart = (tStart.value || '').trim();
+        const rawEnd   = (tEnd.value || '').trim();
+        const a = rawStart ? secs(rawStart) : 0;
+        const b = rawEnd ? secs(rawEnd) : null;
+        if ((rawStart && a == null) || (rawEnd && b == null)) {
+          curDur = 0; curBytes = 0;
+          note = 'tempo inválido';
+        } else if (a >= info.duration) {
+          curDur = 0; curBytes = 0;
+          note = 'início passa da duração';
+        } else if (b != null && b <= a) {
+          curDur = 0; curBytes = 0;
+          note = 'fim deve ser maior que o início';
+        } else {
+          const effEnd = b != null ? Math.min(b, info.duration) : info.duration;
+          const dur = Math.max(0.1, effEnd - a);
+          const frac = dur / info.duration;
+          let bytes = null;
+          if (tgt > 0) { bytes = tgt * 1048576; note = 'tamanho alvo'; }
+          else if (audio) {
+            const f = afmt.value, kbps = f === 'wav' ? 1411 : f === 'flac' ? 800 : parseInt(brSel.value, 10) || 192;
+            bytes = kbps * 125 * dur; note = (f === 'wav' || f === 'flac') ? 'sem perdas · ' + f.toUpperCase() : `${kbps} kbps · ${f.toUpperCase()}`;
+          } else if (info.sizeBytes) {
+            const src = EFF[(info.video?.codec || '').toLowerCase()] || 1.2, dst = EFF[vcodec.value] || 1;
+            const q = vcodec.value === 'copy' ? 1 : ({ high: 1.6, default: 1, low: .6 }[qSel2.value] || 1);
+            bytes = vcodec.value === 'copy' ? info.sizeBytes * frac : info.sizeBytes * frac * (dst / src) * q;
+            note = 'aproximado';
+          }
+          curDur = dur; curBytes = bytes || 0;
+          if (bytes) out = '≈ ' + fmtSize(bytes);
         }
-        curDur = dur; curBytes = bytes || 0;
-        if (bytes) out = '≈ ' + fmtSize(bytes);
       }
       estEl.textContent = out; estNote.textContent = note;
     }

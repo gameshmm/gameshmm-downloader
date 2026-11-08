@@ -1,59 +1,13 @@
-// ── Platform detection ────────────────────────────────────────────────────────
-const SOURCES = {
-  youtube:          { label: 'YouTube',      color: '#ff4444', bg: 'rgba(255,68,68,0.1)',   border: 'rgba(255,68,68,0.3)' },
-  'youtube-playlist':{ label: 'YT Playlist', color: '#ff4444', bg: 'rgba(255,68,68,0.1)',   border: 'rgba(255,68,68,0.3)' },
-  spotify:          { label: 'Spotify',      color: '#1DB954', bg: 'rgba(29,185,84,0.1)',   border: 'rgba(29,185,84,0.3)' },
-  tiktok:           { label: 'TikTok',       color: '#ff2d55', bg: 'rgba(255,45,85,0.1)',   border: 'rgba(255,45,85,0.3)' },
-  instagram:        { label: 'Instagram',    color: '#e1306c', bg: 'rgba(225,48,108,0.1)',  border: 'rgba(225,48,108,0.3)' },
-  twitter:          { label: 'X · Twitter',  color: '#60a5fa', bg: 'rgba(96,165,250,0.1)', border: 'rgba(96,165,250,0.3)' },
-  facebook:         { label: 'Facebook',     color: '#3b82f6', bg: 'rgba(59,130,246,0.1)',  border: 'rgba(59,130,246,0.3)' },
-  twitch:           { label: 'Twitch',       color: '#9146ff', bg: 'rgba(145,70,255,0.1)',  border: 'rgba(145,70,255,0.3)' },
-  soundcloud:       { label: 'SoundCloud',   color: '#ff5500', bg: 'rgba(255,85,0,0.1)',    border: 'rgba(255,85,0,0.3)' },
-  vimeo:            { label: 'Vimeo',        color: '#1ab7ea', bg: 'rgba(26,183,234,0.1)',  border: 'rgba(26,183,234,0.3)' },
-  reddit:           { label: 'Reddit',       color: '#ff4500', bg: 'rgba(255,69,0,0.1)',    border: 'rgba(255,69,0,0.3)' },
-  dailymotion:      { label: 'Dailymotion',  color: '#0066ff', bg: 'rgba(0,102,255,0.1)',   border: 'rgba(0,102,255,0.3)' },
-  universal:        { label: 'Universal',    color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)',  border: 'rgba(139,92,246,0.3)' },
-};
-
-function detectSource(url) {
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    const h = u.hostname.replace(/^www\./, '');
-    if (h === 'youtu.be' || h.endsWith('youtube.com') || h.endsWith('youtube-nocookie.com')) {
-      const list = u.searchParams.get('list');
-      if (list && !list.startsWith('RD') && !list.startsWith('FL') && !list.startsWith('LL'))
-        return { type: 'youtube-playlist', ...SOURCES['youtube-playlist'] };
-      return { type: 'youtube', ...SOURCES.youtube };
-    }
-    if (h === 'open.spotify.com' || h.endsWith('spotify.com'))
-      return { type: 'spotify', ...SOURCES.spotify };
-    if (h.endsWith('tiktok.com') || h === 'vm.tiktok.com')
-      return { type: 'tiktok', ...SOURCES.tiktok };
-    if (h.endsWith('instagram.com'))
-      return { type: 'instagram', ...SOURCES.instagram };
-    if (h.endsWith('twitter.com') || h === 'x.com' || h.endsWith('.x.com') || h === 't.co')
-      return { type: 'twitter', ...SOURCES.twitter };
-    if (h.endsWith('facebook.com') || h === 'fb.watch' || h === 'fb.com')
-      return { type: 'facebook', ...SOURCES.facebook };
-    if (h.endsWith('twitch.tv') || h === 'clips.twitch.tv')
-      return { type: 'twitch', ...SOURCES.twitch };
-    if (h.endsWith('soundcloud.com'))
-      return { type: 'soundcloud', ...SOURCES.soundcloud };
-    if (h.endsWith('vimeo.com'))
-      return { type: 'vimeo', ...SOURCES.vimeo };
-    if (h.endsWith('reddit.com') || h === 'v.redd.it')
-      return { type: 'reddit', ...SOURCES.reddit };
-    if (h.endsWith('dailymotion.com') || h === 'dai.ly')
-      return { type: 'dailymotion', ...SOURCES.dailymotion };
-    return { type: 'universal', ...SOURCES.universal };
-  } catch {
-    return null;
-  }
-}
-
-// Matiz de cada origem (miniaturas coloridas da fila e do histórico)
-const SRC_HUE = { youtube: 25, 'youtube-playlist': 25, spotify: 150, tiktok: 355, instagram: 8, twitter: 245, facebook: 255, twitch: 295, soundcloud: 45, vimeo: 215, reddit: 38, dailymotion: 262 };
+// ── Platform detection (compartilhado em lib/media-utils.js) ───────────────────
+const {
+  SOURCES,
+  SRC_HUE,
+  detectSource,
+  CONTAINER_COMPAT: CONV_CONTAINER_COMPAT,
+  AUDIO_FORMATS,
+  fmtSizeShort,
+  formatCountdownMs,
+} = window.__gdlMedia;
 function srcHue(url) { const t = detectSource(url)?.type; return SRC_HUE[t] != null ? SRC_HUE[t] : 300; }
 const ICO = (id, cls = '') => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
 
@@ -116,6 +70,59 @@ function showErrorToast(result) {
   }
 }
 
+async function copyDiagnosticText(text) {
+  if (!text) return;
+  try {
+    if (navigator.clipboard) await navigator.clipboard.writeText(text);
+    else if (window.electronAPI?.writeClipboardText) await window.electronAPI.writeClipboardText(text);
+    showToast('Diagnóstico copiado!', 'success', 2200);
+  } catch {
+    showToast('Não foi possível copiar o diagnóstico.', 'error', 2500);
+  }
+}
+
+function clearDiagnosticBox(prefix) {
+  const box = document.getElementById(`${prefix}-diag`);
+  const pre = document.getElementById(`${prefix}-diag-pre`);
+  const det = document.getElementById(`${prefix}-diag-details`);
+  const copyBtn = document.getElementById(`${prefix}-diag-copy`);
+  const retryBtn = prefix === 'dl' ? document.getElementById('btn-dl-compat-retry') : null;
+  if (pre) pre.textContent = '';
+  if (det) { det.open = false; det.classList.add('hidden'); }
+  if (copyBtn) copyBtn.classList.add('hidden');
+  if (retryBtn) retryBtn.classList.add('hidden');
+  if (box) box.classList.add('hidden');
+}
+
+function showDiagnosticBox(prefix, result) {
+  const box = document.getElementById(`${prefix}-diag`);
+  if (!box) return;
+  const pre = document.getElementById(`${prefix}-diag-pre`);
+  const det = document.getElementById(`${prefix}-diag-details`);
+  const copyBtn = document.getElementById(`${prefix}-diag-copy`);
+  const retryBtn = prefix === 'dl' ? document.getElementById('btn-dl-compat-retry') : null;
+  const tech = result?.technicalDetails ? String(result.technicalDetails).trim() : '';
+  const canRetry = !!(retryBtn && result?.canCompatRetry);
+
+  if (!tech && !canRetry) {
+    clearDiagnosticBox(prefix);
+    return;
+  }
+  if (pre) pre.textContent = tech;
+  if (det) {
+    det.open = false;
+    det.classList.toggle('hidden', !tech);
+  }
+  if (copyBtn) {
+    copyBtn.classList.toggle('hidden', !tech);
+    copyBtn.onclick = () => copyDiagnosticText(tech || result?.error || '');
+  }
+  if (retryBtn) {
+    retryBtn.classList.toggle('hidden', !canRetry);
+  }
+  box.classList.remove('hidden');
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentUrl = '';
 let lastUsedCookies = false;
@@ -125,6 +132,8 @@ let plSelectedIndexes = new Set(); // quais desses o usuário marcou pra baixar
 let isSpotify = false;
 let currentSource = null;
 let selectedFormatId = null;
+let selectedFormatHasAudio = false;
+const canceledUiIds = new Set();
 let currentFormats = [];
 let currentAudioSize = 0;          // bytes do melhor áudio (estimativa de tamanho na aba Download)
 let lastSavedFolder = '';
@@ -306,10 +315,69 @@ document.getElementById('pl-select-none')?.addEventListener('click', () => {
 // botão "Abrir Pasta" — que abria a pasta do vídeo *anterior*. E a lista de
 // formatos continuava sendo a do vídeo antigo, então "Usar Formato" mandava um
 // id que não existia no vídeo atual e o download falhava.
+function populateAudioTracks(tracks) {
+  const grp = document.getElementById('audio-track-group');
+  const sel = document.getElementById('dl-audiolang');
+  const cnt = document.getElementById('audio-track-count');
+  if (!grp || !sel) return;
+  sel.innerHTML = '<option value="auto">Automático (padrão do vídeo)</option>';
+  if (!Array.isArray(tracks) || tracks.length < 2) {
+    grp.classList.add('hidden');
+    if (cnt) cnt.textContent = '';
+    return;
+  }
+  tracks.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.code;
+    opt.textContent = t.label;
+    sel.appendChild(opt);
+  });
+  if (cnt) cnt.textContent = `${tracks.length} idiomas disponíveis`;
+  grp.classList.remove('hidden');
+}
+
+function updateSubsAvailabilityHint(info) {
+  const hint = document.getElementById('dl-subs-hint');
+  if (!hint) return;
+  if (info?.hasHumanSubs) {
+    const sample = (info.subLanguages || []).slice(0, 6).join(', ');
+    const more = (info.subLanguages || []).length > 6 ? '…' : '';
+    hint.textContent = `Legendas manuais disponíveis (${sample}${more}) · idiomas em Config`;
+  } else if (info?.hasAutoSubs) {
+    hint.textContent = 'Apenas legendas automáticas disponíveis · ative "automáticas" em Config';
+  } else if (info && info.success) {
+    hint.textContent = 'Nenhuma legenda detectada neste vídeo';
+  } else {
+    hint.textContent = 'Baixa e embute quando existirem · idiomas em Config';
+  }
+}
+
+function getEstimatedDownloadBytes() {
+  const fmt = getRadio('fmt');
+  if (fmt === 'audio') {
+    const durText = (document.getElementById('video-duration')?.textContent || '').trim();
+    const parts = /^\d+(:\d+){1,2}$/.test(durText) ? durText.split(':').map(Number) : null;
+    const secs = parts ? parts.reduce((a, n) => a * 60 + n, 0) : 0;
+    const kbps = Number(document.getElementById('audio-quality-range')?.value) || 320;
+    return secs > 0 ? kbps * 125 * secs : 0;
+  }
+  if (!currentFormats.length) return 0;
+  if (selectedFormatId) {
+    const exact = currentFormats.find(f => f.id === selectedFormatId);
+    if (exact?.size) return exact.size + (exact.hasAudio ? 0 : (currentAudioSize || 0));
+  }
+  const q = document.getElementById('quality')?.value || 'best';
+  const chosen = q === 'best'
+    ? currentFormats[0]
+    : (currentFormats.find(f => f.height <= Number(q)) || currentFormats[currentFormats.length - 1]);
+  return chosen?.size ? chosen.size + (chosen.hasAudio ? 0 : (currentAudioSize || 0)) : 0;
+}
+
 function resetDownloadState() {
   currentFormats = [];
   currentAudioSize = 0;
   selectedFormatId = null;
+  selectedFormatHasAudio = false;
   lastSavedFolder = '';
   lastPlaylistFolder = '';
   document.getElementById('fmt-label').classList.add('hidden');
@@ -319,6 +387,10 @@ function resetDownloadState() {
   btnOpenFolderPl.classList.add('hidden');
   resetBar(dlBar, dlText);
   resetBar(plBar, plText);
+  clearDiagnosticBox('dl');
+  clearDiagnosticBox('spotify');
+  populateAudioTracks([]);
+  updateSubsAvailabilityHint(null);
   plActiveSlots.clear();
   renderPlSlots();
   updateFormatsButton();
@@ -356,6 +428,7 @@ async function fetchInfo() {
     isPlaylist = false;
     loaderText.textContent = 'Buscando no Spotify...';
     const info = await window.electronAPI.spotifyGetInfo({ url });
+    if (currentUrl !== url) return;
     loader.classList.add('hidden');
     if (!info.success) { showErrorToast(info); return; }
 
@@ -375,6 +448,7 @@ async function fetchInfo() {
     document.getElementById('spotify-log').textContent = '';
     document.getElementById('btn-spotify-cancel').classList.add('hidden');
     document.getElementById('btn-spotify-dl').disabled = false;
+    if (typeof syncSpotifyBitrate === 'function') syncSpotifyBitrate();
     document.getElementById('spotify-preview').classList.remove('hidden');
     return;
   }
@@ -386,6 +460,7 @@ async function fetchInfo() {
 
   if (isPlaylist) {
     const info = await window.electronAPI.getPlaylistInfo({ url });
+    if (currentUrl !== url) return;
     loader.classList.add('hidden');
     if (!info.success) { showErrorToast(info); return; }
     lastUsedCookies = info.usedCookies || false;
@@ -393,6 +468,7 @@ async function fetchInfo() {
       // No entries — treat as single video
       isPlaylist = false;
       const vinfo = await window.electronAPI.getVideoInfo({ url });
+      if (currentUrl !== url) return;
       if (vinfo.success) {
         lastUsedCookies = vinfo.usedCookies || false;
         showVideoPreview(vinfo);
@@ -408,6 +484,7 @@ async function fetchInfo() {
 
   // ── Single video (YouTube, TikTok, Instagram, X, Twitch, etc.) ───────────
   const info = await window.electronAPI.getVideoInfo({ url });
+  if (currentUrl !== url) return;
   loader.classList.add('hidden');
   if (info.success) {
     lastUsedCookies = info.usedCookies || false;
@@ -419,7 +496,12 @@ async function fetchInfo() {
         // Só aplica se ainda for o mesmo link — numa busca rápida atrás da
         // outra, a resposta antiga chegando depois sobrescreveria a nova.
         if (currentUrl !== fetchedFor) return;
-        if (r.success) { currentFormats = r.formats; currentAudioSize = r.audioSize || 0; }
+        if (r.success) {
+          currentFormats = r.formats;
+          currentAudioSize = r.audioSize || 0;
+          populateAudioTracks(r.audioTracks || []);
+          updateSubsAvailabilityHint(r);
+        }
         updateFormatsButton();
       }).catch(() => {});
     }
@@ -577,6 +659,7 @@ btnUseFormat.addEventListener('click', () => {
   if (!chosenFmtId) return;
   selectedFormatId = chosenFmtId;
   const fmt = currentFormats.find(f => f.id === chosenFmtId);
+  selectedFormatHasAudio = !!(fmt && fmt.hasAudio);
   const label = document.getElementById('fmt-label');
   label.textContent = fmt ? `${fmt.height}p ${fmt.ext.toUpperCase()}${fmt.vcodec ? ' · ' + fmt.vcodec : ''}` : chosenFmtId;
   label.classList.remove('hidden');
@@ -591,6 +674,7 @@ btnUseFormat.addEventListener('click', () => {
 function clearChosenFormat(reason) {
   if (!selectedFormatId) return;
   selectedFormatId = null;
+  selectedFormatHasAudio = false;
   document.getElementById('fmt-label').classList.add('hidden');
   if (reason) showToast(reason, 'info', 2600);
 }
@@ -609,24 +693,29 @@ const dlBar        = document.getElementById('dl-bar');
 const dlText       = document.getElementById('dl-text');
 const btnOpenFolder= document.getElementById('btn-open-folder');
 
-let dlCanceled = false;
 btnDownload.addEventListener('click', async () => {
-  if (!currentUrl) return;
+  if (!currentUrl || activeDownloadId || btnDownload.disabled) return;
+  btnDownload.disabled = true;
 
-  // Avisa se esse link já foi baixado com sucesso antes (o diálogo é nativo e
-  // roda no processo principal — ver 'check-duplicate-download' no main.js).
-  const dup = await window.electronAPI.checkDuplicateDownload(currentUrl);
-  if (dup.duplicate && !dup.proceed) return;
+  try {
+    // Avisa se esse link já foi baixado com sucesso antes (o diálogo é nativo e
+    // roda no processo principal — ver 'check-duplicate-download' no main.js).
+    const dup = await window.electronAPI.checkDuplicateDownload(currentUrl);
+    if (dup?.duplicate && !dup.proceed) {
+      btnDownload.disabled = false;
+      return;
+    }
+  } catch { /* segue mesmo se a checagem de duplicado falhar */ }
 
   const dlId = uid();
   activeDownloadId = dlId;
-  dlCanceled = false;
   _dlSpeed = makeEma(0.2);
   _dlEta   = makeEma(0.15);
 
-  btnDownload.disabled = true;
+  btnCancel.disabled = false;
   btnCancel.classList.remove('hidden');
   btnOpenFolder.classList.add('hidden');
+  clearDiagnosticBox('dl');
   dlStatus.classList.remove('hidden');
   resetBar(dlBar, dlText);
   dlText.textContent = 'Preparando...';
@@ -645,20 +734,33 @@ btnDownload.addEventListener('click', async () => {
       container: document.getElementById('dl-container')?.value || 'mp4',
       videoCodec: document.getElementById('dl-vcodec')?.value || 'auto',
       audioBitrate: Number(document.getElementById('audio-quality-range')?.value) || 0,
+      audioLang: document.getElementById('dl-audiolang')?.value || 'auto',
+      estimatedBytes: getEstimatedDownloadBytes(),
       useCookies: lastUsedCookies,
       downloadId: dlId,
       formatId: selectedFormatId,
+      formatHasAudio: selectedFormatHasAudio,
       title: document.getElementById('video-title').textContent
     });
   } catch (e) {
     result = { success: false, error: e?.message || 'Falha inesperada ao falar com o app.' };
   } finally {
-    activeDownloadId = null;
-    btnDownload.disabled = false;
-    btnCancel.classList.add('hidden');
+    if (activeDownloadId === dlId) {
+      activeDownloadId = null;
+      btnDownload.disabled = false;
+      btnCancel.disabled = false;
+      btnCancel.classList.add('hidden');
+    }
   }
 
-  if (dlCanceled) return;
+  if (canceledUiIds.delete(dlId)) return;
+  if (activeDownloadId && activeDownloadId !== dlId) return;
+
+  if (result?.canceled) {
+    dlStatus.classList.add('hidden');
+    resetBar(dlBar, dlText);
+    return;
+  }
 
   if (result.success) {
     dlBar.style.width = '100%';
@@ -670,19 +772,45 @@ btnDownload.addEventListener('click', async () => {
   } else {
     dlBar.style.background = 'linear-gradient(90deg, var(--danger), #f87171)';
     dlText.textContent = result.error;
+    showDiagnosticBox('dl', result);
     showErrorToast(result);
   }
 });
 
+document.getElementById('btn-dl-compat-retry')?.addEventListener('click', () => {
+  if (!currentUrl || activeDownloadId) return;
+  const videoRadio = document.querySelector('input[name="fmt"][value="video"]');
+  if (videoRadio) { videoRadio.checked = true; videoRadio.dispatchEvent(new Event('change', { bubbles: true })); }
+  const cont = document.getElementById('dl-container');
+  if (cont) { cont.value = 'mp4'; cont.dispatchEvent(new Event('change', { bubbles: true })); }
+  const vcodec = document.getElementById('dl-vcodec');
+  if (vcodec) { vcodec.value = 'h264'; vcodec.dataset.userChanged = 'true'; }
+  const qSel = document.getElementById('quality');
+  if (qSel) {
+    const targetQ = [...qSel.options].some(o => o.value === '1080') ? '1080' : 'best';
+    qSel.value = targetQ;
+    qSel.dispatchEvent(new Event('quality-sync'));
+  }
+  clearChosenFormat(null);
+  btnDownload.click();
+});
+
 btnCancel.addEventListener('click', async () => {
   if (!activeDownloadId) return;
-  dlCanceled = true;
-  await window.electronAPI.cancelDownload(activeDownloadId);
-  btnCancel.classList.add('hidden');
-  dlBar.style.background = 'linear-gradient(90deg, var(--danger), #f87171)';
-  dlText.textContent = 'Download cancelado.';
-  btnDownload.disabled = false;
-  showToast('Download cancelado.', 'warning');
+  const idToCancel = activeDownloadId;
+  canceledUiIds.add(idToCancel);
+  btnCancel.disabled = true;
+  try {
+    await window.electronAPI.cancelDownload(idToCancel);
+  } finally {
+    if (activeDownloadId === idToCancel) activeDownloadId = null;
+    btnCancel.disabled = false;
+    btnCancel.classList.add('hidden');
+    dlBar.style.background = 'linear-gradient(90deg, var(--danger), #f87171)';
+    dlText.textContent = 'Download cancelado.';
+    btnDownload.disabled = false;
+    showToast('Download cancelado.', 'warning');
+  }
 });
 
 btnOpenFolder.addEventListener('click', () => { if (lastSavedFolder) window.electronAPI.openFolder(lastSavedFolder); });
@@ -697,19 +825,18 @@ const plLabel         = document.getElementById('pl-label');
 const plCounter       = document.getElementById('pl-counter');
 const btnOpenFolderPl = document.getElementById('btn-open-folder-pl');
 let lastPlaylistFolder = '';
-let plCanceled = false;
 
 btnDlPlaylist.addEventListener('click', async () => {
-  if (!currentUrl) return;
+  if (!currentUrl || activePlaylistId || btnDlPlaylist.disabled) return;
   if (plItems.length && plSelectedIndexes.size === 0) {
     showToast('Marque pelo menos um vídeo da playlist pra baixar.', 'warning');
     return;
   }
   const dlId = uid();
   activePlaylistId = dlId;
-  plCanceled = false;
 
   btnDlPlaylist.disabled = true;
+  btnCancelPl.disabled = false;
   btnCancelPl.classList.remove('hidden');
   btnOpenFolderPl.classList.add('hidden');
   plStatus.classList.remove('hidden');
@@ -736,12 +863,24 @@ btnDlPlaylist.addEventListener('click', async () => {
   } catch (e) {
     result = { success: false, error: e?.message || 'Falha inesperada ao falar com o app.' };
   } finally {
-    activePlaylistId = null;
-    btnDlPlaylist.disabled = false;
-    btnCancelPl.classList.add('hidden');
+    if (activePlaylistId === dlId) {
+      activePlaylistId = null;
+      btnDlPlaylist.disabled = false;
+      btnCancelPl.disabled = false;
+      btnCancelPl.classList.add('hidden');
+    }
   }
 
-  if (plCanceled) return;
+  if (canceledUiIds.delete(dlId)) return;
+  if (activePlaylistId && activePlaylistId !== dlId) return;
+
+  if (result?.canceled) {
+    plStatus.classList.add('hidden');
+    resetBar(plBar, plText);
+    plLabel.textContent = '';
+    plCounter.textContent = '';
+    return;
+  }
 
   if (result.success) {
     plBar.style.width = '100%';
@@ -762,16 +901,23 @@ btnDlPlaylist.addEventListener('click', async () => {
 
 btnCancelPl.addEventListener('click', async () => {
   if (!activePlaylistId) return;
-  plCanceled = true;
+  const idToCancel = activePlaylistId;
+  canceledUiIds.add(idToCancel);
+  btnCancelPl.disabled = true;
   plActiveSlots.clear();
   renderPlSlots();
-  await window.electronAPI.cancelDownload(activePlaylistId);
-  btnCancelPl.classList.add('hidden');
-  plBar.style.background = 'linear-gradient(90deg, var(--danger), #f87171)';
-  plText.textContent = 'Download cancelado.';
-  plLabel.textContent = '';
-  btnDlPlaylist.disabled = false;
-  showToast('Playlist cancelada.', 'warning');
+  try {
+    await window.electronAPI.cancelDownload(idToCancel);
+  } finally {
+    if (activePlaylistId === idToCancel) activePlaylistId = null;
+    btnCancelPl.disabled = false;
+    btnCancelPl.classList.add('hidden');
+    plBar.style.background = 'linear-gradient(90deg, var(--danger), #f87171)';
+    plText.textContent = 'Download cancelado.';
+    plLabel.textContent = '';
+    btnDlPlaylist.disabled = false;
+    showToast('Playlist cancelada.', 'warning');
+  }
 });
 
 btnOpenFolderPl.addEventListener('click', () => { if (lastPlaylistFolder) window.electronAPI.openFolder(lastPlaylistFolder); });
@@ -852,7 +998,7 @@ function renderPlSlots() {
     el.className = 'pl-slot';
     const parts = [slot.percent.toFixed(1) + '%'];
     if (slot.speed) parts.push(slot.speed);
-    if (slot.eta)   parts.push('ETA ' + slot.eta);
+    if (slot.eta)   parts.push(/^\d+:\d+/.test(slot.eta) ? 'ETA ' + slot.eta : slot.eta);
     el.innerHTML = `
       <div class="pl-slot-info">
         <span class="pl-slot-title">${escapeHtml(slot.title)}</span>
@@ -863,7 +1009,7 @@ function renderPlSlots() {
   }
 }
 
-window.electronAPI.onPlaylistProgress(({ completed, total, title, percent, phase, speed, eta, index }) => {
+window.electronAPI.onPlaylistProgress(({ completed, total, title, percent, phase, speed, eta, index, label }) => {
   const done = completed !== undefined ? completed : 0;
   if (total > 0) {
     plBar.style.width = `${Math.min((done / total) * 100, 99)}%`;
@@ -895,7 +1041,7 @@ window.electronAPI.onPlaylistProgress(({ completed, total, title, percent, phase
     renderPlSlots();
   } else if (phase === 'converting') {
     const prev = plActiveSlots.get(index) || { title };
-    plActiveSlots.set(index, { title: prev.title, percent: 95, speed: '', eta: 'Convertendo MP3...' });
+    plActiveSlots.set(index, { title: prev.title, percent: 95, speed: '', eta: label || 'Processando...' });
     renderPlSlots();
   } else if (phase === 'merging') {
     const prev = plActiveSlots.get(index) || { title };
@@ -936,7 +1082,9 @@ function persistQueue() {
   persistQueueTimer = setTimeout(() => {
     const snapshot = downloadQueue.map(i => ({
       id: i.id, url: i.url, title: i.title, format: i.format, quality: i.quality,
-      defaultFmt: i.defaultFmt, error: i.error,
+      container: i.container, videoCodec: i.videoCodec, audioLang: i.audioLang,
+      isSpotify: i.isSpotify, spFormat: i.spFormat, spQuality: i.spQuality,
+      defaultFmt: i.defaultFmt, error: i.error, technicalDetails: i.technicalDetails,
       isPlaylist: i.isPlaylist, playlistCount: i.playlistCount,
       // Um item que estava baixando quando o app fechou volta como pendente.
       status: i.status === 'downloading' ? 'pending' : i.status,
@@ -959,6 +1107,9 @@ async function restoreQueue() {
   downloadQueue
     .filter(i => i.isPlaylist && i.status === 'pending' && (!i.title || i.title === i.url))
     .forEach(i => fetchQueuePlaylistMeta(i.id, i.url));
+  downloadQueue
+    .filter(i => (i.isSpotify || detectSource(i.url)?.type === 'spotify') && i.status === 'pending' && (!i.title || i.title === i.url))
+    .forEach(i => { i.isSpotify = true; fetchQueueSpotifyMeta(i.id, i.url); });
   const pending = downloadQueue.filter(i => i.status === 'pending').length;
   if (pending) showToast(`Fila restaurada — ${pending} ${pending === 1 ? 'item pendente' : 'itens pendentes'}.`, 'info', 3500);
 }
@@ -967,12 +1118,19 @@ async function restoreQueue() {
 // de um item só (antes era o mesmo bloco duplicado nos dois lugares, e só um
 // deles recebia as mudanças).
 function queueItemMetaText(item) {
-  const fmtLabel = item.format === 'audio' ? 'MP3' : `MP4 · ${item.quality === 'best' ? 'Máxima' : item.quality + 'p'}`;
+  const live = item.status === 'downloading'
+    ? `${item.speed ? ` · ${item.speed}` : ''}${item.eta ? ` · ${/^\d+:\d+/.test(item.eta) ? 'ETA ' + item.eta : item.eta}` : ''}`
+    : '';
+  if (item.isSpotify || detectSource(item.url)?.type === 'spotify') {
+    const fmt = (item.spFormat || (['mp3', 'flac', 'm4a', 'ogg'].includes(String(item.format || '').toLowerCase()) ? item.format : 'mp3')).toUpperCase();
+    const q = fmt === 'FLAC' ? 'sem perdas' : (item.spQuality || (item.quality && item.quality !== 'best' ? item.quality : '320k'));
+    const cnt = item.playlistCount > 1 ? `${item.playlistCount} faixas · ` : '';
+    return `Spotify · ${cnt}${fmt} · ${q}${live}`;
+  }
+  const cont = (item.container || 'mp4').toUpperCase();
+  const fmtLabel = item.format === 'audio' ? 'MP3' : `${cont} · ${item.quality === 'best' ? 'Máxima' : item.quality + 'p'}`;
   const plLabel = item.isPlaylist
     ? (item.playlistCount ? `Playlist · ${item.playlistCount} vídeos · ` : 'Playlist · ')
-    : '';
-  const live = item.status === 'downloading'
-    ? `${item.speed ? ` · ${item.speed}` : ''}${item.eta ? ` · ETA ${item.eta}` : ''}`
     : '';
   return plLabel + fmtLabel + live;
 }
@@ -995,10 +1153,54 @@ function fetchQueuePlaylistMeta(id, url) {
   }).catch(() => {});
 }
 
+function fetchQueueSpotifyMeta(id, url) {
+  window.electronAPI.spotifyGetInfo({ url }).then(info => {
+    const item = downloadQueue.find(i => i.id === id);
+    if (!item || item.status !== 'pending') return;
+    if (info?.success) {
+      item.title = info.artist ? `${info.artist} — ${info.name}` : (info.name || item.title);
+      item.playlistCount = info.count > 1 ? info.count : null;
+      renderQueue();
+    }
+  }).catch(() => {});
+}
+
 function queuePillHtml(item) {
   const pct = item.percent != null ? item.percent : 0;
   return `<i></i>${item.status === 'downloading' ? Math.round(pct) + '%' : (QUEUE_STATUS_LABEL[item.status] || item.status)}`;
 }
+function queueSelOpts(list, selected) {
+  return list.map(([val, label]) =>
+    `<option value="${escapeHtml(val)}"${String(val) === String(selected) ? ' selected' : ''}>${escapeHtml(label)}</option>`
+  ).join('');
+}
+
+function queueItemControlsHtml(item) {
+  const isSp = item.isSpotify || detectSource(item.url)?.type === 'spotify';
+  const canExpand = item.isPlaylist || (isSp && (item.playlistCount > 1 || /\/(album|playlist)\//i.test(item.url)));
+  const expandBtn = canExpand
+    ? `<button type="button" class="btn-ghost btn-sm btn-expand-item" data-id="${item.id}"${item.expanding ? ' disabled' : ''} title="Expandir em itens individuais na fila">${item.expanding ? 'Expandindo...' : 'Expandir itens'}</button>`
+    : '';
+  if (isSp) {
+    const spFmt = item.spFormat || (['mp3', 'flac', 'm4a', 'ogg'].includes(String(item.format || '').toLowerCase()) ? item.format : 'mp3');
+    const spQuality = item.spQuality || '320k';
+    return `<div class="qi-controls">
+      <select class="qi-sel" data-id="${item.id}" data-prop="spFormat" aria-label="Formato Spotify">${queueSelOpts([['mp3','MP3'],['flac','FLAC'],['m4a','M4A'],['ogg','OGG']], spFmt)}</select>
+      <select class="qi-sel" data-id="${item.id}" data-prop="spQuality"${spFmt === 'flac' ? ' disabled' : ''} aria-label="Bitrate Spotify">${queueSelOpts([['320k','320k'],['256k','256k'],['192k','192k'],['128k','128k']], spQuality)}</select>
+      ${expandBtn}
+    </div>`;
+  }
+  const fmt = item.format === 'audio' ? 'audio' : 'video';
+  const cont = item.container || 'mp4';
+  const q = item.quality || 'best';
+  return `<div class="qi-controls">
+    <select class="qi-sel" data-id="${item.id}" data-prop="format" aria-label="Formato">${queueSelOpts([['video','Vídeo'],['audio','MP3']], fmt)}</select>
+    ${fmt !== 'audio' ? `<select class="qi-sel" data-id="${item.id}" data-prop="container" aria-label="Contêiner">${queueSelOpts([['mp4','MP4'],['mkv','MKV']], cont)}</select>` : ''}
+    ${fmt !== 'audio' ? `<select class="qi-sel" data-id="${item.id}" data-prop="quality" aria-label="Qualidade">${queueSelOpts([['best','Máxima'],['2160','4K'],['1440','1440p'],['1080','1080p'],['720','720p'],['480','480p'],['360','360p']], q)}</select>` : ''}
+    ${expandBtn}
+  </div>`;
+}
+
 function queueItemBody(item) {
   const pct = item.percent != null ? item.percent : 0;
   const canEdit = item.status === 'pending' && !queueRunning;
@@ -1008,7 +1210,9 @@ function queueItemBody(item) {
     <div class="queue-item-info">
       <div class="queue-item-url">${escapeHtml(item.title || item.url)}</div>
       <div class="queue-item-meta">${escapeHtml(queueItemMetaText(item))}</div>
+      ${canEdit ? queueItemControlsHtml(item) : ''}
       ${item.status === 'error' && item.error ? `<div class="queue-item-error">${escapeHtml(item.error)}</div>` : ''}
+      ${item.status === 'error' && item.technicalDetails ? `<details class="qi-diag"><summary>Log técnico</summary><pre class="diag-pre mono">${escapeHtml(item.technicalDetails)}</pre></details>` : ''}
       ${item.status === 'downloading' ? `<div class="qi-bar-wrap"><div class="qi-bar" style="width:${pct}%"></div></div>` : ''}
     </div>
     <span class="queue-item-status spill ${QUEUE_STATUS_CLASS[item.status] || 'status-pending'}">${queuePillHtml(item)}</span>
@@ -1021,7 +1225,17 @@ let queueDragId = null;
 function attachQueueDnd(el, item) {
   if (queueRunning || item.status !== 'pending') return;
   el.draggable = true;
+  el.addEventListener('pointerdown', e => {
+    el.draggable = !e.target.closest('select, button, input, details, summary, .qi-controls, .qi-diag');
+  });
+  el.addEventListener('pointerup', () => {
+    el.draggable = true;
+  });
   el.addEventListener('dragstart', e => {
+    if (e.target && e.target !== el && e.target.closest?.('select, button, input, details, summary, .qi-controls, .qi-diag')) {
+      e.preventDefault();
+      return;
+    }
     queueDragId = item.id;
     el.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
@@ -1106,8 +1320,20 @@ function updateQueueItem(id, patch) {
   if (st) st.innerHTML = queuePillHtml(item);
 }
 
-// Um listener só pra lista inteira (em vez de um por botão a cada render).
-queueList.addEventListener('click', (e) => {
+// Listeners delegados pra lista inteira (controles inline, expandir, repetir e remover).
+queueList.addEventListener('change', (e) => {
+  const sel = e.target.closest('.qi-sel');
+  if (!sel || queueRunning) return;
+  const item = downloadQueue.find(i => i.id === sel.dataset.id);
+  if (!item || item.status !== 'pending') return;
+  const prop = sel.dataset.prop;
+  item[prop] = sel.value;
+  item.defaultFmt = false;
+  if (prop === 'format' && !item.container) item.container = 'mp4';
+  renderQueue();
+});
+
+queueList.addEventListener('click', async (e) => {
   const remove = e.target.closest('.btn-remove-item');
   if (remove) {
     downloadQueue = downloadQueue.filter(i => i.id !== remove.dataset.id);
@@ -1118,8 +1344,60 @@ queueList.addEventListener('click', (e) => {
   if (retry) {
     const item = downloadQueue.find(i => i.id === retry.dataset.id);
     if (!item) return;
-    Object.assign(item, { status: 'pending', error: '', percent: 0, speed: '', eta: '' });
+    Object.assign(item, { status: 'pending', error: '', technicalDetails: '', percent: 0, speed: '', eta: '' });
     renderQueue();
+    return;
+  }
+  const expandBtn = e.target.closest('.btn-expand-item');
+  if (expandBtn && !queueRunning && window.electronAPI.expandQueueItems) {
+    const item = downloadQueue.find(i => i.id === expandBtn.dataset.id);
+    if (!item || item.status !== 'pending' || item.expanding) return;
+    item.expanding = true;
+    renderQueue();
+    let res;
+    try {
+      res = await window.electronAPI.expandQueueItems({ url: item.url });
+    } catch (err) {
+      res = { success: false, error: err?.message || 'Falha ao expandir itens.' };
+    }
+    const idx = downloadQueue.findIndex(i => i.id === item.id);
+    if (idx < 0 || queueRunning) return;
+    delete item.expanding;
+    if (!res?.success || !Array.isArray(res.items) || !res.items.length) {
+      renderQueue();
+      showErrorToast(res || { error: 'Não foi possível expandir os itens.' });
+      return;
+    }
+    const existing = new Set(downloadQueue.filter(x => x.id !== item.id).map(x => x.url));
+    const expanded = [];
+    for (const entry of res.items) {
+      if (!entry?.url || existing.has(entry.url)) continue;
+      existing.add(entry.url);
+      expanded.push({
+        id: uid(),
+        url: entry.url,
+        title: entry.title || entry.url,
+        format: item.format || 'video',
+        quality: item.quality || 'best',
+        container: item.container || 'mp4',
+        videoCodec: item.videoCodec || 'auto',
+        audioLang: item.audioLang || 'auto',
+        isSpotify: !!entry.isSpotify,
+        spFormat: item.spFormat || 'mp3',
+        spQuality: item.spQuality || '320k',
+        defaultFmt: false,
+        status: 'pending',
+        isPlaylist: false,
+      });
+    }
+    if (!expanded.length) {
+      renderQueue();
+      showToast('Todos os itens desse link já estavam na fila.', 'info', 3000);
+      return;
+    }
+    downloadQueue.splice(idx, 1, ...expanded);
+    renderQueue();
+    showToast(`${expanded.length} itens expandidos na fila!`, 'success', 3200);
   }
 });
 
@@ -1135,9 +1413,15 @@ function addLinksToQueue(raw) {
     if (existing.has(url)) { dups++; return; }
     existing.add(url);
     const item = { id: uid(), url, format: getRadio('q-fmt'), quality: document.getElementById('q-quality').value, status: 'pending', defaultFmt: true };
-    if (detectSource(url)?.type === 'youtube-playlist') {
+    const srcType = detectSource(url)?.type;
+    if (srcType === 'youtube-playlist') {
       item.isPlaylist = true;
       fetchQueuePlaylistMeta(item.id, url);
+    } else if (srcType === 'spotify') {
+      item.isSpotify = true;
+      item.spFormat = 'mp3';
+      item.spQuality = '320k';
+      fetchQueueSpotifyMeta(item.id, url);
     }
     downloadQueue.push(item);
     added++;
@@ -1205,6 +1489,7 @@ document.getElementById('btn-add-queue').addEventListener('click', () => {
     quality: document.getElementById('quality').value,
     container: document.getElementById('dl-container')?.value || 'mp4',
     videoCodec: document.getElementById('dl-vcodec')?.value || 'auto',
+    audioLang: document.getElementById('dl-audiolang')?.value || 'auto',
     title: document.getElementById('video-title').textContent, status: 'pending'
   });
   renderQueue();
@@ -1238,7 +1523,12 @@ btnCancelQueue.addEventListener('click', async () => {
   queueCanceled = true;
   queuePaused = false;
   const running = downloadQueue.filter(i => i.status === 'downloading');
-  await Promise.all(running.map(i => window.electronAPI.cancelDownload(i.id).catch(() => {})));
+  await Promise.all(running.map(i => {
+    const fn = (i.isSpotify || detectSource(i.url)?.type === 'spotify')
+      ? window.electronAPI.cancelSpotify
+      : window.electronAPI.cancelDownload;
+    return fn(i.id).catch(() => {});
+  }));
   downloadQueue.forEach(i => {
     if (i.status === 'pending' || i.status === 'downloading') {
       Object.assign(i, { status: 'error', error: 'Cancelado', percent: 0, speed: '', eta: '' });
@@ -1295,25 +1585,64 @@ async function runQueueWorker(pending, folder, doneRef) {
       if (data.type === 'progress') {
         updateQueueItem(dlId, { percent: data.percent, speed: data.speed, eta: data.eta });
       } else if (data.type === 'converting') {
-        updateQueueItem(dlId, { percent: 95, speed: '', eta: 'Convertendo MP3...' });
+        updateQueueItem(dlId, { percent: 95, speed: '', eta: data.label || 'Convertendo...' });
       } else if (data.type === 'merging') {
-        updateQueueItem(dlId, { percent: 97, speed: '', eta: 'Mesclando...' });
+        updateQueueItem(dlId, { percent: 97, speed: '', eta: data.label || 'Mesclando...' });
       }
     });
 
     try {
-      const result = await window.electronAPI.downloadVideo({
-        url: item.url, format: item.format, quality: item.quality, container: item.container,
-        videoCodec: item.videoCodec || 'auto',
-        useCookies: false, downloadId: dlId, savePath: folder,
-        accelerate: true, title: item.title
-      });
+      const srcType = detectSource(item.url)?.type;
+      let result;
+      if (item.isSpotify || srcType === 'spotify') {
+        const spFmt = item.spFormat || (['mp3', 'flac', 'm4a', 'ogg'].includes(String(item.format || '').toLowerCase()) ? item.format : 'mp3');
+        result = await window.electronAPI.spotifyDownload({
+          url: item.url,
+          format: spFmt,
+          quality: item.spQuality || item.quality || '320k',
+          downloadId: dlId,
+          savePath: folder,
+          silentGlobalProgress: true,
+        });
+      } else if (item.isPlaylist || srcType === 'youtube-playlist') {
+        result = await window.electronAPI.downloadPlaylist({
+          url: item.url,
+          format: item.format,
+          quality: item.quality,
+          container: item.container || 'mp4',
+          videoCodec: item.videoCodec || 'auto',
+          useCookies: lastUsedCookies,
+          downloadId: dlId,
+          concurrency: 2,
+          accelerate: true,
+          savePath: folder,
+          silentGlobalProgress: true,
+        });
+      } else {
+        result = await window.electronAPI.downloadVideo({
+          url: item.url,
+          format: item.format,
+          quality: item.quality,
+          container: item.container || 'mp4',
+          videoCodec: item.videoCodec || 'auto',
+          audioLang: item.audioLang || 'auto',
+          useCookies: lastUsedCookies,
+          downloadId: dlId,
+          savePath: folder,
+          accelerate: true,
+          title: item.title,
+          silentGlobalProgress: true,
+        });
+      }
+      if (!result?.success && !queueCanceled) doneRef.errors++;
       updateQueueItem(dlId, {
-        status: result.success ? 'done' : 'error',
-        percent: result.success ? 100 : 0, speed: '', eta: '',
-        error: result.success ? '' : (result.error || 'Falhou'),
+        status: result?.success ? 'done' : 'error',
+        percent: result?.success ? 100 : 0, speed: '', eta: '',
+        error: result?.success ? '' : (result?.error || 'Falhou'),
+        technicalDetails: result?.success ? '' : (result?.technicalDetails || ''),
       });
     } catch (e) {
+      if (!queueCanceled) doneRef.errors++;
       updateQueueItem(dlId, { status: 'error', percent: 0, speed: '', eta: '', error: e.message });
     } finally {
       window.electronAPI.removeDownloadProgressById(dlId);
@@ -1327,10 +1656,50 @@ async function runQueueWorker(pending, folder, doneRef) {
   }
 }
 
-btnStartQueue.addEventListener('click', async () => {
-  if (queueRunning) return;
+let activeQueueSchedule = null;
+let scheduleTickTimer = null;
+
+function renderQueueSchedule() {
+  const timeInput = document.getElementById('queue-schedule-time');
+  const btnSched  = document.getElementById('btn-schedule-queue');
+  const btnCancel = document.getElementById('btn-cancel-schedule');
+  const statusEl  = document.getElementById('queue-schedule-status');
+  if (!timeInput || !btnSched || !btnCancel || !statusEl) return;
+
+  if (scheduleTickTimer) { clearInterval(scheduleTickTimer); scheduleTickTimer = null; }
+
+  if (!activeQueueSchedule) {
+    btnSched.innerHTML = `${ICO('clock')} Agendar fila`;
+    btnCancel.classList.add('hidden');
+    statusEl.classList.add('hidden');
+    statusEl.textContent = '';
+    if (!timeInput.value) {
+      const def = new Date(Date.now() + 30 * 60 * 1000);
+      timeInput.value = `${String(def.getHours()).padStart(2, '0')}:${String(def.getMinutes()).padStart(2, '0')}`;
+    }
+    return;
+  }
+
+  timeInput.value = activeQueueSchedule.time || '';
+  btnSched.innerHTML = `${ICO('clock')} Atualizar horário`;
+  btnCancel.classList.remove('hidden');
+  statusEl.classList.remove('hidden');
+
+  const updateText = () => {
+    if (!activeQueueSchedule) return;
+    const leftMs = Math.max(0, Number(activeQueueSchedule.targetAt) - Date.now());
+    const dayNote = activeQueueSchedule.tomorrow ? ' (amanhã)' : '';
+    const folderTail = String(activeQueueSchedule.folder || '').split(/[\\/]/).filter(Boolean).pop() || activeQueueSchedule.folder;
+    statusEl.textContent = `Agendada para ${activeQueueSchedule.time}${dayNote} · começa ${formatCountdownMs(leftMs)} · pasta: ${folderTail}`;
+  };
+  updateText();
+  scheduleTickTimer = setInterval(updateText, 1000);
+}
+
+async function startQueueWithFolder(providedFolder = null, { isScheduled = false } = {}) {
+  if (queueRunning) return false;
   const pending = downloadQueue.filter(i => i.status === 'pending');
-  if (!pending.length) return;
+  if (!pending.length) return false;
 
   queueRunning = true;
   queuePaused = false;
@@ -1338,18 +1707,40 @@ btnStartQueue.addEventListener('click', async () => {
   refreshQueueControls();
   queueStatus.classList.remove('hidden');
   resetBar(queueBar, queueText);
-  queueText.textContent = 'Aguardando pasta...';
+  queueText.textContent = providedFolder ? 'Preparando fila...' : 'Aguardando pasta...';
 
-  const folder = await window.electronAPI.chooseFolder();
+  const folder = providedFolder || await window.electronAPI.chooseFolder();
   if (!folder) {
     queueRunning = false;
     refreshQueueControls();
     queueStatus.classList.add('hidden');
-    return;
+    return false;
+  }
+
+  if (window.electronAPI.checkDiskSpace) {
+    try {
+      const disk = await window.electronAPI.checkDiskSpace({ targetPath: folder, estimatedBytes: 0 });
+      if (disk?.critical && !isScheduled) {
+        if (!confirm(`${disk.message}\n\nPasta: ${folder}\n\nDeseja iniciar a fila mesmo assim?`)) {
+          queueRunning = false;
+          refreshQueueControls();
+          queueStatus.classList.add('hidden');
+          return false;
+        }
+      } else if (disk?.warnOnly || (disk?.critical && isScheduled)) {
+        showToast(disk.message, 'warning', 6000);
+      }
+    } catch {}
+  }
+
+  if (!isScheduled && activeQueueSchedule && window.electronAPI.setQueueSchedule) {
+    activeQueueSchedule = null;
+    window.electronAPI.setQueueSchedule(null).catch(() => {});
+    renderQueueSchedule();
   }
 
   const concurrency = parseInt(concurrencySelect?.value || '2', 10);
-  const doneRef = { count: 0, total: pending.length };
+  const doneRef = { count: 0, total: pending.length, errors: 0 };
   queueText.textContent = `0 / ${pending.length} concluídos — ${concurrency} paralelos`;
   renderQueue();
 
@@ -1367,13 +1758,13 @@ btnStartQueue.addEventListener('click', async () => {
     queueBar.style.background = 'linear-gradient(90deg, var(--danger), #f87171)';
     queueText.textContent = 'Fila cancelada.';
     renderQueue();
-    return;
+    return true;
   }
 
   queueBar.style.width = '100%';
   queueBar.style.background = 'linear-gradient(90deg, var(--success), #34d399)';
-  const errors = downloadQueue.filter(i => i.status === 'error').length;
-  const ok     = doneRef.total - errors;
+  const errors = doneRef.errors || 0;
+  const ok     = Math.max(0, doneRef.total - errors);
   queueText.textContent = errors
     ? `${ok} baixados · ${errors} com erro — use "Repetir falhas" pra tentar de novo`
     : `Todos os ${doneRef.total} downloads concluídos!`;
@@ -1381,18 +1772,85 @@ btnStartQueue.addEventListener('click', async () => {
   renderQueue();
 
   const queueOnFinish = document.getElementById('queue-on-finish');
-  if (queueOnFinish && queueOnFinish.value !== 'none' && doneRef.total > 0 && !wasCanceled) {
+  if (queueOnFinish && queueOnFinish.value !== 'none' && ok > 0 && !wasCanceled) {
     const action = queueOnFinish.value;
-    const actionLabel = action === 'shutdown' ? 'Desligando o computador em 60s...' : 'Suspendendo o computador...';
-    showToast(actionLabel, 'warning', 8000);
-    setTimeout(() => {
-      window.electronAPI.executePowerAction(action);
-    }, 2500);
+    const actionLabel = action === 'shutdown'
+      ? 'O computador será desligado em 6 segundos.'
+      : 'O computador será suspenso em 6 segundos.';
+    let powerCanceled = false;
+    const timer = setTimeout(() => {
+      if (!powerCanceled) window.electronAPI.executePowerAction(action);
+    }, 6000);
+    showToast(actionLabel, 'warning', 6200, {
+      label: 'Cancelar ação',
+      pendingLabel: 'Cancelado',
+      onClick: () => {
+        powerCanceled = true;
+        clearTimeout(timer);
+        showToast('Ação de energia cancelada.', 'info', 2500);
+      }
+    });
   }
+  return true;
+}
+
+btnStartQueue.addEventListener('click', () => startQueueWithFolder());
+
+document.getElementById('btn-schedule-queue')?.addEventListener('click', async () => {
+  if (queueRunning || !window.electronAPI.setQueueSchedule) return;
+  if (!downloadQueue.some(i => i.status === 'pending')) {
+    showToast('Adicione pelo menos um item pendente à fila antes de agendar.', 'warning', 3500);
+    return;
+  }
+  const time = document.getElementById('queue-schedule-time')?.value;
+  if (!time) {
+    showToast('Escolha um horário para agendar.', 'warning', 3000);
+    return;
+  }
+  const res = await window.electronAPI.setQueueSchedule({ time });
+  if (res?.canceled) return;
+  if (!res?.ok) {
+    showToast(res?.error || 'Não foi possível agendar.', 'error', 4000);
+    return;
+  }
+  activeQueueSchedule = res.schedule;
+  renderQueueSchedule();
+  showToast(`Fila agendada para as ${res.schedule.time}!`, 'success', 3500);
 });
+
+document.getElementById('btn-cancel-schedule')?.addEventListener('click', async () => {
+  if (!window.electronAPI.setQueueSchedule) return;
+  await window.electronAPI.setQueueSchedule(null);
+  activeQueueSchedule = null;
+  renderQueueSchedule();
+  showToast('Agendamento cancelado.', 'info', 2500);
+});
+
+if (window.electronAPI.onTriggerScheduledQueue) {
+  window.electronAPI.onTriggerScheduledQueue(async ({ folder, time }) => {
+    activeQueueSchedule = null;
+    renderQueueSchedule();
+    if (!queueRunning && downloadQueue.some(i => i.status === 'pending')) {
+      document.querySelector('.tab[data-tab="queue"]')?.click();
+      showToast(`Horário agendado (${time}) chegou — iniciando a fila!`, 'info', 4500);
+      await startQueueWithFolder(folder, { isScheduled: true });
+    } else if (!queueRunning) {
+      showToast(`Horário agendado (${time}) chegou, mas não há itens pendentes na fila.`, 'warning', 5000);
+    }
+  });
+}
+
+if (window.electronAPI.onQueueScheduleExpired) {
+  window.electronAPI.onQueueScheduleExpired(({ time }) => {
+    activeQueueSchedule = null;
+    renderQueueSchedule();
+    showToast(`O agendamento das ${time} expirou enquanto o app estava fechado.`, 'warning', 6000);
+  });
+}
 
 renderQueue();
 restoreQueue();
+window.electronAPI.getQueueSchedule?.().then(s => { activeQueueSchedule = s; renderQueueSchedule(); }).catch(() => { renderQueueSchedule(); });
 
 // ── History ───────────────────────────────────────────────────────────────────
 let allHistory = [];
@@ -1444,9 +1902,13 @@ function renderHistoryItems(list) {
   list.forEach(item => {
     const el = document.createElement('div');
     el.className = `history-item${item.status === 'success' ? '' : ' qi-error'}`;
-    const kind = item.format === 'audio' ? 'MP3' : `MP4${item.quality && item.quality !== 'best' ? ' ' + item.quality + 'p' : ''}`;
+    const rawFmt = String(item.format || '').toLowerCase();
+    const isAudio = AUDIO_FORMATS.has(rawFmt);
+    const kind = isAudio
+      ? `${rawFmt === 'audio' ? 'MP3' : rawFmt.toUpperCase()}${item.quality && !['best', 'lossless'].includes(item.quality) ? ' ' + item.quality : ''}`
+      : `MP4${item.quality && item.quality !== 'best' ? ' ' + item.quality + 'p' : ''}`;
     el.innerHTML = `
-      <div class="mini${item.format === 'audio' ? ' sq' : ''}" style="--ah:${srcHue(item.url)}" aria-hidden="true"></div>
+      <div class="mini${isAudio ? ' sq' : ''}" style="--ah:${srcHue(item.url)}" aria-hidden="true"></div>
       <div class="history-info">
         <div class="history-title">${escapeHtml(item.title || item.url)}</div>
         <div class="history-meta">${escapeHtml(historyItemSourceLabel(item))} · ${kind} · ${fmtDate(item.date)}</div>
@@ -1458,10 +1920,17 @@ function renderHistoryItems(list) {
     // Reenfileirar serve tanto pra repetir um download que falhou quanto pra
     // baixar de novo algo que já deu certo (outra pasta, arquivo apagado...).
     el.querySelector('.history-requeue').addEventListener('click', () => {
+      const srcType = detectSource(item.url)?.type;
+      const spFmt = ['mp3', 'flac', 'm4a', 'ogg'].includes(rawFmt) ? rawFmt : 'mp3';
       downloadQueue.push({
         id: uid(), url: item.url, title: item.title,
-        format: item.format === 'audio' ? 'audio' : 'video',
-        quality: item.quality || 'best', status: 'pending',
+        format: isAudio ? 'audio' : 'video',
+        quality: item.quality || 'best',
+        isPlaylist: srcType === 'youtube-playlist',
+        isSpotify: srcType === 'spotify',
+        spFormat: srcType === 'spotify' ? spFmt : undefined,
+        spQuality: srcType === 'spotify' ? (item.quality || '320k') : undefined,
+        status: 'pending',
       });
       renderQueue();
       document.querySelector('.tab[data-tab="queue"]').click();
@@ -1492,8 +1961,9 @@ function applyHistoryFilters() {
     if (q && !((item.title || '').toLowerCase().includes(q) || (item.url || '').toLowerCase().includes(q))) return false;
     if (status && item.status !== status) return false;
     if (source && historyItemSourceLabel(item) !== source) return false;
-    if (type === 'audio' && item.format !== 'audio') return false;
-    if (type === 'video' && item.format === 'audio') return false;
+    const isAudio = AUDIO_FORMATS.has(String(item.format || '').toLowerCase());
+    if (type === 'audio' && !isAudio) return false;
+    if (type === 'video' && isAudio) return false;
     return true;
   });
   renderHistoryItems(filtered);
@@ -1749,6 +2219,18 @@ async function refreshRuntimeStatus() {
     'Extensão do navegador',
     info.extensionLastSeen ? `falou com o app ${fmtRelative(info.extensionLastSeen)}` : 'nunca falou com o app'
   ));
+  rows.push(statusRowHtml(
+    info.bridgePort ? 'ok' : 'warn',
+    'Bridge local da extensão',
+    info.bridgePort ? `ativa em 127.0.0.1:${info.bridgePort}` : 'inativa (usando protocolo do navegador)'
+  ));
+  rows.push(statusRowHtml(
+    info.diskFreeBytes == null ? 'warn' : info.diskFreeBytes < 500 * 1024 * 1024 ? 'bad' : info.diskFreeBytes < 2 * 1024 * 1024 * 1024 ? 'warn' : 'ok',
+    'Espaço livre no destino',
+    info.diskFreeBytes != null
+      ? `${fmtSizeShort(info.diskFreeBytes)} disponíveis${info.diskPath ? ` (${info.diskPath})` : ''}`
+      : 'não foi possível verificar'
+  ));
   rows.push(statusRowHtml('ok', 'Versão do app', info.appVersion + (info.packaged ? '' : ' (modo desenvolvimento)')));
   statusGrid.innerHTML = rows.join('');
 
@@ -1863,25 +2345,31 @@ if (btnLogout) {
 updateLogin();
 
 // ── Spotify progress ──────────────────────────────────────────────────────────
-// Como nos outros fluxos: sem essa flag, cancelar mostrava "Download
-// cancelado." e, segundos depois, a promise resolvia com erro e sobrescrevia
-// tudo com uma mensagem vermelha do yt-dlp — o usuário cancelava e levava um
-// erro na cara.
-let spCanceled = false;
+function syncSpotifyBitrate() {
+  const br = document.getElementById('sp-bitrate');
+  if (!br) return;
+  const lossless = getRadio('sp-fmt') === 'flac';
+  br.disabled = lossless;
+  br.title = lossless ? 'FLAC é sem perdas (não usa seletor de bitrate)' : '';
+}
+document.getElementsByName('sp-fmt').forEach(r => r.addEventListener('change', syncSpotifyBitrate));
+syncSpotifyBitrate();
+
 document.getElementById('btn-spotify-dl').addEventListener('click', async () => {
-  if (!currentUrl) return;
-  const spId = uid();
-  activeSpotifyId = spId;
-  spCanceled = false;
   const btnDl   = document.getElementById('btn-spotify-dl');
   const btnCnl  = document.getElementById('btn-spotify-cancel');
+  if (!currentUrl || activeSpotifyId || btnDl.disabled) return;
+  const spId = uid();
+  activeSpotifyId = spId;
   const status  = document.getElementById('spotify-dl-status');
   const bar     = document.getElementById('spotify-dl-bar');
   const text    = document.getElementById('spotify-dl-text');
   const log     = document.getElementById('spotify-log');
   const btnOpen = document.getElementById('btn-spotify-open');
 
+  clearDiagnosticBox('spotify');
   btnDl.disabled = true;
+  btnCnl.disabled = false;
   btnCnl.classList.remove('hidden');
   btnOpen.classList.add('hidden');
   status.classList.remove('hidden');
@@ -1902,12 +2390,25 @@ document.getElementById('btn-spotify-dl').addEventListener('click', async () => 
   } catch (e) {
     result = { success: false, error: e?.message || 'Falha inesperada ao falar com o app.' };
   } finally {
-    activeSpotifyId = null;
-    btnDl.disabled = false;
-    btnCnl.classList.add('hidden');
+    if (activeSpotifyId === spId) {
+      activeSpotifyId = null;
+      btnDl.disabled = false;
+      btnCnl.disabled = false;
+      btnCnl.classList.add('hidden');
+    }
   }
 
-  if (spCanceled) return;
+  if (canceledUiIds.delete(spId)) return;
+  if (activeSpotifyId && activeSpotifyId !== spId) return;
+
+  if (result?.canceled) {
+    status.classList.add('hidden');
+    log.classList.add('hidden');
+    bar.style.width = '0%';
+    bar.style.background = '';
+    text.textContent = '';
+    return;
+  }
 
   if (result.success) {
     bar.style.width = '100%';
@@ -1920,24 +2421,32 @@ document.getElementById('btn-spotify-dl').addEventListener('click', async () => 
   } else {
     bar.style.background = 'linear-gradient(90deg, #ef4444, #f87171)';
     text.textContent = result.error;
+    showDiagnosticBox('spotify', result);
     showToast(result.error, 'error');
   }
 });
 
 document.getElementById('btn-spotify-cancel').addEventListener('click', async () => {
   if (!activeSpotifyId) return;
-  spCanceled = true;
-  await window.electronAPI.cancelSpotify(activeSpotifyId);
-  activeSpotifyId = null;
+  const idToCancel = activeSpotifyId;
+  canceledUiIds.add(idToCancel);
+  const btnCnl = document.getElementById('btn-spotify-cancel');
+  btnCnl.disabled = true;
   spotActiveSlots.clear();
   renderSpotSlots();
-  const bar  = document.getElementById('spotify-dl-bar');
-  const text = document.getElementById('spotify-dl-text');
-  bar.style.background = 'linear-gradient(90deg, #ef4444, #f87171)';
-  text.textContent = 'Download cancelado.';
-  document.getElementById('btn-spotify-dl').disabled = false;
-  document.getElementById('btn-spotify-cancel').classList.add('hidden');
-  showToast('Download do Spotify cancelado.', 'warning');
+  try {
+    await window.electronAPI.cancelSpotify(idToCancel);
+  } finally {
+    if (activeSpotifyId === idToCancel) activeSpotifyId = null;
+    btnCnl.disabled = false;
+    const bar  = document.getElementById('spotify-dl-bar');
+    const text = document.getElementById('spotify-dl-text');
+    bar.style.background = 'linear-gradient(90deg, #ef4444, #f87171)';
+    text.textContent = 'Download cancelado.';
+    document.getElementById('btn-spotify-dl').disabled = false;
+    btnCnl.classList.add('hidden');
+    showToast('Download do Spotify cancelado.', 'warning');
+  }
 });
 
 document.getElementById('btn-spotify-open').addEventListener('click', () => {
@@ -1954,7 +2463,7 @@ function renderSpotSlots() {
     div.className = 'pl-slot';
     const parts = [slot.percent.toFixed(1) + '%'];
     if (slot.speed) parts.push(slot.speed);
-    if (slot.eta)   parts.push('ETA ' + slot.eta);
+    if (slot.eta)   parts.push(/^\d+:\d+/.test(slot.eta) ? 'ETA ' + slot.eta : slot.eta);
     div.innerHTML = `
       <div class="pl-slot-info">
         <span class="pl-slot-title">${escapeHtml(slot.title)}</span>
@@ -2010,7 +2519,6 @@ window.electronAPI.onSpotifyLog(line => {
 // ── Converter ─────────────────────────────────────────────────────────────────
 let convFilePath = null;
 let convId = null;
-let convCanceled = false;
 let lastConvFolder = '';
 
 const convFileNameInput = document.getElementById('conv-file-name');
@@ -2106,6 +2614,7 @@ function applyConvFile(res) {
   const dzH = document.getElementById('conv-dz-h'), dzP = document.getElementById('conv-dz-p');
   if (dzH) dzH.textContent = res.fileName;
   if (dzP) dzP.textContent = 'Clique ou solte outro arquivo para trocar';
+  clearDiagnosticBox('conv');
   convOptions.classList.remove('hidden');
   convStatus.classList.add('hidden');
   btnConvOpenFolder.classList.add('hidden');
@@ -2165,12 +2674,37 @@ if (btnConvPick) {
     convAudioOpts.classList.toggle('hidden', ['wav', 'flac'].includes(convAudioFormatSel.value));
   });
 
-  const convVcodecSel  = document.getElementById('conv-vcodec');
-  const convVcodecHint = document.getElementById('conv-vcodec-hint');
+  const convContainerSel = document.getElementById('conv-container');
+  const convVcodecSel    = document.getElementById('conv-vcodec');
+  const convAcodecSel    = document.getElementById('conv-acodec');
+  const convVcodecHint   = document.getElementById('conv-vcodec-hint');
   const VCODEC_HINTS = {
     av1: 'AV1 comprime melhor que todos os outros, mas a codificação pode ser bem mais lenta — um vídeo longo pode levar bastante tempo.',
     vp9: 'VP9 funciona melhor dentro do contêiner WebM; em outros formatos pode não abrir em alguns players.',
   };
+  function syncConverterCodecOptions(notify = false) {
+    const cont = convContainerSel?.value || 'mp4';
+    const compat = CONV_CONTAINER_COMPAT[cont] || CONV_CONTAINER_COMPAT.mp4;
+    let adjusted = false;
+    [...convVcodecSel.options].forEach(o => { o.disabled = !compat.video.has(o.value); });
+    [...convAcodecSel.options].forEach(o => { o.disabled = !compat.audio.has(o.value); });
+    if (!compat.video.has(convVcodecSel.value)) {
+      convVcodecSel.value = compat.defVideo;
+      adjusted = true;
+    }
+    if (!compat.audio.has(convAcodecSel.value)) {
+      convAcodecSel.value = compat.defAudio;
+      adjusted = true;
+    }
+    const hint = VCODEC_HINTS[convVcodecSel.value];
+    convVcodecHint.textContent = hint || '';
+    convVcodecHint.classList.toggle('hidden', !hint);
+    if (typeof updateGpuHint === 'function') updateGpuHint();
+    if (notify && adjusted) {
+      showToast(`${cont.toUpperCase()} não suporta um dos codecs selecionados — ajustei para uma combinação compatível.`, 'info', 3000);
+    }
+  }
+  convContainerSel?.addEventListener('change', () => syncConverterCodecOptions(true));
   convVcodecSel.addEventListener('change', () => {
     const hint = VCODEC_HINTS[convVcodecSel.value];
     convVcodecHint.textContent = hint || '';
@@ -2224,6 +2758,7 @@ if (btnConvPick) {
 
   const converterTabBtn = document.querySelector('.tab[data-tab="converter"]');
   if (converterTabBtn) converterTabBtn.addEventListener('click', ensureGpuDetected);
+  syncConverterCodecOptions(false);
   updateGpuHint();
 
   // ── Presets do conversor ────────────────────────────────────────────────
@@ -2279,11 +2814,12 @@ if (btnConvPick) {
       if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
     }
     if (preset.container) document.getElementById('conv-container').value = preset.container;
-    if (preset.videoCodec) { convVcodecSel.value = preset.videoCodec; convVcodecSel.dispatchEvent(new Event('change')); }
+    if (preset.videoCodec) convVcodecSel.value = preset.videoCodec;
     if (preset.audioCodec) document.getElementById('conv-acodec').value = preset.audioCodec;
     if (preset.audioFormat) { convAudioFormatSel.value = preset.audioFormat; convAudioFormatSel.dispatchEvent(new Event('change')); }
     if (preset.quality) document.getElementById('conv-quality').value = preset.quality;
     if (preset.bitrate) document.getElementById('conv-bitrate').value = preset.bitrate;
+    syncConverterCodecOptions(true);
     document.dispatchEvent(new Event('gdl-sync'));   // seg/slider refletem os selects
   }
 
@@ -2330,11 +2866,13 @@ if (btnConvPick) {
   });
 
   btnConvert.addEventListener('click', async () => {
-    if (!convFilePath) return;
-    convId = uid();
-    convCanceled = false;
+    if (!convFilePath || convId || btnConvert.disabled) return;
+    const id = uid();
+    convId = id;
 
+    clearDiagnosticBox('conv');
     btnConvert.disabled = true;
+    btnConvCancel.disabled = false;
     btnConvCancel.classList.remove('hidden');
     btnConvOpenFolder.classList.add('hidden');
     convStatus.classList.remove('hidden');
@@ -2355,17 +2893,27 @@ if (btnConvPick) {
         trimStart: document.getElementById('conv-trim-start').value.trim(),
         trimEnd: document.getElementById('conv-trim-end').value.trim(),
         targetSizeMB: parseFloat(document.getElementById('conv-target-size').value) || null,
-        convertId: convId
+        convertId: id
       });
     } catch (e) {
       result = { success: false, error: e?.message || 'Falha inesperada ao falar com o app.' };
     } finally {
-      convId = null;
-      btnConvert.disabled = false;
-      btnConvCancel.classList.add('hidden');
+      if (convId === id) {
+        convId = null;
+        btnConvert.disabled = false;
+        btnConvCancel.disabled = false;
+        btnConvCancel.classList.add('hidden');
+      }
     }
 
-    if (convCanceled) return;
+    if (canceledUiIds.delete(id)) return;
+    if (convId && convId !== id) return;
+
+    if (result?.canceled) {
+      convStatus.classList.add('hidden');
+      resetBar(convBar, convText);
+      return;
+    }
 
     if (result.success) {
       convBar.style.width = '100%';
@@ -2377,19 +2925,27 @@ if (btnConvPick) {
     } else {
       convBar.style.background = 'linear-gradient(90deg, var(--danger), #f87171)';
       convText.textContent = result.error;
+      showDiagnosticBox('conv', result);
       showErrorToast(result);
     }
   });
 
   btnConvCancel.addEventListener('click', async () => {
     if (!convId) return;
-    convCanceled = true;
-    await window.electronAPI.cancelConvert(convId);
-    btnConvCancel.classList.add('hidden');
-    convBar.style.background = 'linear-gradient(90deg, var(--danger), #f87171)';
-    convText.textContent = 'Conversão cancelada.';
-    btnConvert.disabled = false;
-    showToast('Conversão cancelada.', 'warning');
+    const idToCancel = convId;
+    canceledUiIds.add(idToCancel);
+    btnConvCancel.disabled = true;
+    try {
+      await window.electronAPI.cancelConvert(idToCancel);
+    } finally {
+      if (convId === idToCancel) convId = null;
+      btnConvCancel.disabled = false;
+      btnConvCancel.classList.add('hidden');
+      convBar.style.background = 'linear-gradient(90deg, var(--danger), #f87171)';
+      convText.textContent = 'Conversão cancelada.';
+      btnConvert.disabled = false;
+      showToast('Conversão cancelada.', 'warning');
+    }
   });
 
   btnConvOpenFolder.addEventListener('click', () => { if (lastConvFolder) window.electronAPI.openFolder(lastConvFolder); });
@@ -2557,6 +3113,10 @@ if (window.electronAPI.readClipboardText) {
     if (!src || src.type === 'universal') return;
 
     const openClip = () => {
+      if (activeDownloadId || activePlaylistId || activeSpotifyId) {
+        if (addLinksToQueue(trimmed)) showToast('Download em andamento — link copiado adicionado à fila.', 'info', 3500);
+        return;
+      }
       const downloadTab = document.querySelector('.tab[data-tab="download"]');
       if (downloadTab && !downloadTab.classList.contains('active')) downloadTab.click();
       urlInput.value = trimmed;
@@ -2570,13 +3130,8 @@ if (window.electronAPI.readClipboardText) {
       return;
     }
     showToast(`Link do ${src.label} copiado.`, 'info', 8000, {
-      label: 'Colar e buscar',
-      onClick: () => {
-        const downloadTab = document.querySelector('.tab[data-tab="download"]');
-        if (downloadTab && !downloadTab.classList.contains('active')) downloadTab.click();
-        urlInput.value = trimmed;
-        fetchInfo();
-      }
+      label: (activeDownloadId || activePlaylistId || activeSpotifyId) ? 'Mandar pra fila' : 'Colar e buscar',
+      onClick: openClip
     });
   }
 

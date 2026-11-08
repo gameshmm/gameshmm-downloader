@@ -1,49 +1,195 @@
 // Versão Firefox — usa o namespace `browser.*` (baseado em Promise), que é o
-// nativo do Firefox, em vez do `chrome.*` (baseado em callback) usado na
-// versão Chrome/Edge desta mesma extensão (ver /extension). O resto da
-// lógica é idêntica — só a forma de chamar a API muda.
+// nativo do Firefox, em vez do `chrome.*` usado na versão Chrome/Edge (/extension).
 //
-// Background script em segundo plano — junto com o popup, é o único lugar
-// que tem acesso à API browser.cookies (content scripts, que rodam dentro da
-// página de verdade, não têm essa API). O botão "Conectar ao app" mora na
-// própria página do YouTube (ver content.js) porque só um clique de verdade
-// no DOM da página conta como gesto do usuário pro Firefox liberar o
-// protocolo customizado gameshmm-downloader:// — um clique no popup da
-// extensão, repassado por mensagem pro content script, não conta (mesmo
-// comportamento confirmado na versão Chrome). Por isso dividimos em duas
-// etapas: o clique acontece na página, que pede os cookies aqui (rápido, é
-// tudo local) e só então navega, ainda dentro da mesma janela de gesto do
-// usuário.
-// google.com sozinho já acumula dezenas de cookies (anúncios, consentimento,
-// analytics, outros serviços Google como Drive/Mail se a pessoa usa) que não
-// têm nada a ver com login — mandar todos inflava o link pra ~44KB numa
-// conta real, o que pode estourar algum limite no caminho até o Windows. Só
-// os cookies de sessão/autenticação de verdade (nome contém "SID", ou é
-// LOGIN_INFO) bastam pro yt-dlp reconhecer o login.
+// Canal principal quando o app está aberto: bridge HTTP local em 127.0.0.1
+// (portas 47832..47835), com feedback real de entrega e status de login.
+// Fallback quando o app está fechado: protocolo gameshmm-downloader:// clicado
+// diretamente na página dentro do gesto síncrono do usuário.
 const AUTH_COOKIE_NAME_RE = /SID|LOGIN_INFO/i;
+const BRIDGE_PORTS = [47832, 47833, 47834, 47835];
+const LOGIN_CONNECTED_KEY = 'gdlLoginConnected';
 
-browser.runtime.onMessage.addListener((msg) => {
-  if (!msg || msg.type !== 'gdl-get-login-cookies') return; // não é pra nós, deixa outro listener responder
+let lastKnownPort = null;
 
-  // Retornar uma Promise (em vez de usar sendResponse + return true, estilo
-  // chrome.*) é como o listener assíncrono funciona no namespace browser.*.
-  return (async () => {
+async function syncLoginConnectedStorage(cookiesConnected) {
+  if (typeof cookiesConnected !== 'boolean') return;
+  try {
+    const cur = await browser.storage.local.get([LOGIN_CONNECTED_KEY]);
+    const next = !!cookiesConnected;
+    if (Boolean(cur?.[LOGIN_CONNECTED_KEY]) !== next) {
+      await browser.storage.local.set({ [LOGIN_CONNECTED_KEY]: next });
+    }
+  } catch {}
+}
+
+async function getAuthCookies() {
+  const [googleCookies, youtubeCookies] = await Promise.all([
+    browser.cookies.getAll({ domain: 'google.com' }),
+    browser.cookies.getAll({ domain: 'youtube.com' }),
+  ]);
+  const all = [...googleCookies, ...youtubeCookies].filter(c => AUTH_COOKIE_NAME_RE.test(c.name));
+  const seen = new Set();
+  return all.filter(c => {
+    const key = `${c.domain}|${c.path}|${c.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 550) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal, cache: 'no-store' });
+    const data = await res.json().catch(() => null);
+    return { ok: res.ok, status: res.status, data };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function checkBridgePort(port) {
+  try {
+    const res = await fetchJsonWithTimeout(`http://127.0.0.1:${port}/status`, {
+      method: 'GET',
+      headers: { 'X-GDL-Extension': '1' },
+    }, 500);
+    if (res.ok && res.data && res.data.bridge === 'gameshmm-downloader') {
+      return {
+        alive: true,
+        port,
+        cookiesConnected: !!res.data.cookiesConnected,
+        version: res.data.version || '',
+        elevated: !!res.data.elevated,
+      };
+    }
+  } catch {}
+  return null;
+}
+
+async function probeBridge() {
+  if (lastKnownPort) {
+    const hit = await checkBridgePort(lastKnownPort);
+    if (hit) {
+      await syncLoginConnectedStorage(hit.cookiesConnected);
+      return hit;
+    }
+    lastKnownPort = null;
+  }
+
+  const results = await Promise.all(BRIDGE_PORTS.map(checkBridgePort));
+  const found = results.find(Boolean);
+  if (found) {
+    lastKnownPort = found.port;
+    await syncLoginConnectedStorage(found.cookiesConnected);
+    return found;
+  }
+  return { alive: false, port: null, cookiesConnected: false, version: '', elevated: false };
+}
+
+async function postToBridge(route, payload) {
+  let port = lastKnownPort;
+  if (!port) {
+    const st = await probeBridge();
+    if (!st.alive) return { ok: false, offline: true, error: 'App não está aberto no momento.' };
+    port = st.port;
+  }
+
+  const attempt = async (targetPort) => {
+    return fetchJsonWithTimeout(`http://127.0.0.1:${targetPort}${route}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-GDL-Extension': '1',
+      },
+      body: JSON.stringify(payload || {}),
+    }, 3000);
+  };
+
+  try {
+    const r = await attempt(port);
+    if (r.data && typeof r.data.cookiesConnected === 'boolean') {
+      await syncLoginConnectedStorage(r.data.cookiesConnected);
+    }
+    return {
+      ok: r.ok && (!r.data || r.data.ok !== false),
+      port,
+      status: r.status,
+      ...(r.data || {}),
+    };
+  } catch {
+    lastKnownPort = null;
+    const retrySt = await probeBridge();
+    if (!retrySt.alive) return { ok: false, offline: true, error: 'Conexão com o app perdida.' };
     try {
-      const [googleCookies, youtubeCookies] = await Promise.all([
-        browser.cookies.getAll({ domain: 'google.com' }),
-        browser.cookies.getAll({ domain: 'youtube.com' }),
-      ]);
-      const all = [...googleCookies, ...youtubeCookies].filter(c => AUTH_COOKIE_NAME_RE.test(c.name));
-      const seen = new Set();
-      const unique = all.filter(c => {
-        const key = `${c.domain}|${c.path}|${c.name}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      return { ok: true, cookies: unique };
+      const r2 = await attempt(retrySt.port);
+      if (r2.data && typeof r2.data.cookiesConnected === 'boolean') {
+        await syncLoginConnectedStorage(r2.data.cookiesConnected);
+      }
+      return {
+        ok: r2.ok && (!r2.data || r2.data.ok !== false),
+        port: retrySt.port,
+        status: r2.status,
+        ...(r2.data || {}),
+      };
+    } catch (e) {
+      lastKnownPort = null;
+      return { ok: false, offline: true, error: e?.message || 'Falha ao falar com o app.' };
+    }
+  }
+}
+
+async function handleMessage(msg) {
+  if (msg.type === 'gdl-get-login-cookies') {
+    try {
+      const cookies = await getAuthCookies();
+      return { ok: true, cookies };
     } catch (e) {
       return { ok: false, error: e?.message || String(e) };
     }
-  })();
+  }
+
+  if (msg.type === 'gdl-bridge-status') {
+    const bridge = await probeBridge();
+    let hasCookies = false;
+    if (msg.includeCookiesCheck) {
+      try {
+        const cookies = await getAuthCookies();
+        hasCookies = cookies.length > 0;
+      } catch {}
+    }
+    return { ok: true, ...bridge, hasCookies };
+  }
+
+  if (msg.type === 'gdl-bridge-open') {
+    const url = typeof msg.url === 'string' ? msg.url.trim() : '';
+    if (!/^https?:\/\//i.test(url)) {
+      return { ok: false, error: 'URL inválida.' };
+    }
+    return postToBridge('/open', { url });
+  }
+
+  if (msg.type === 'gdl-bridge-cookies') {
+    try {
+      const cookies = await getAuthCookies();
+      if (!cookies.length) {
+        return {
+          ok: false,
+          noCookies: true,
+          error: 'Nenhum cookie de login do YouTube/Google encontrado neste navegador.',
+        };
+      }
+      return postToBridge('/cookies', { cookies });
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+  }
+
+  return { ok: false, error: 'Mensagem desconhecida.' };
+}
+
+browser.runtime.onMessage.addListener((msg) => {
+  if (!msg || typeof msg.type !== 'string' || !msg.type.startsWith('gdl-')) return;
+  return handleMessage(msg);
 });

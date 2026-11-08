@@ -1,24 +1,29 @@
-// Helpers comuns aos sites além do YouTube (que tem seu próprio content.js
-// mais específico, com sua lógica própria de SPA). Carregado antes do script
-// de cada site (ver manifest.json) — como o Chrome injeta os arquivos "js"
-// de um mesmo content_scripts em sequência, no mesmo contexto, essas
-// funções/variáveis ficam disponíveis direto pro script do site, sem
-// precisar de import/export.
+// Helpers comuns aos sites além do YouTube (que tem seu próprio content.js).
 const GDL_PROTOCOL_SCHEME = 'gameshmm-downloader';
 const GDL_STORAGE_KEY = 'gdlButtonEnabled';
 const GDL_BADGE_ID = 'gdl-download-badge';
 
-let gdlEnabled = true; // valor real vem do storage assim que carrega (gdlInitStorage)
+let gdlEnabled = true;
+let gdlBridgeAlive = false;
+let gdlSending = false;
 
 function gdlRemoveBadge() {
   const el = document.getElementById(GDL_BADGE_ID);
   if (el) el.remove();
 }
 
-function gdlSendToApp(url) {
-  // Navegar pra um esquema não-http faz o navegador abrir o app registrado
-  // sem sair da página atual (ele intercepta antes de navegar de verdade).
+function gdlSendToAppProtocol(url) {
+  // Navegação síncrona direta pra protocolo customizado (preserva o gesto do usuário).
   window.location.href = `${GDL_PROTOCOL_SCHEME}://download?url=${encodeURIComponent(url)}`;
+}
+
+async function gdlRefreshBridgeStatus() {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'gdl-bridge-status' });
+    gdlBridgeAlive = !!(res && res.alive);
+  } catch {
+    gdlBridgeAlive = false;
+  }
 }
 
 function gdlDisableForever() {
@@ -27,13 +32,23 @@ function gdlDisableForever() {
   try { chrome.storage.local.set({ [GDL_STORAGE_KEY]: false }); } catch {}
 }
 
+function gdlFlashBadgeState(badge, labelEl, baseLabel, text, state, resetMs = 2000) {
+  clearTimeout(badge._gdlTimer);
+  labelEl.textContent = text;
+  if (state) badge.dataset.state = state;
+  else delete badge.dataset.state;
+  badge._gdlTimer = setTimeout(() => {
+    labelEl.textContent = baseLabel;
+    delete badge.dataset.state;
+  }, resetMs);
+}
+
 // label: texto do botão (varia por site — "Baixar vídeo", "Baixar do Spotify"...).
 // getUrlFn: função síncrona chamada só no clique, que devolve a URL a enviar.
 function gdlBuildBadge(label, getUrlFn) {
   const badge = document.createElement('div');
   badge.id = GDL_BADGE_ID;
   badge.className = 'gdl-badge';
-  // cor do botão por site (ver content.css): youtube, tiktok, instagram, twitter/x, spotify
   badge.dataset.site = (location.hostname.match(/(youtube|tiktok|instagram|twitter|spotify|(?:^|\.)x)\.?/) || [])[1]?.replace(/^\./, '') || '';
   badge.title = 'Baixar com o gameshmm downloader';
   badge.innerHTML = `
@@ -41,9 +56,36 @@ function gdlBuildBadge(label, getUrlFn) {
     <span class="gdl-badge-label">${label}</span>
     <button type="button" class="gdl-badge-close" title="Remover este botão">✕</button>
   `;
+  badge.addEventListener('pointerenter', () => { gdlRefreshBridgeStatus(); });
   badge.addEventListener('click', (e) => {
     if (e.target.closest('.gdl-badge-close')) return;
-    gdlSendToApp(getUrlFn());
+    if (gdlSending) return;
+    const labelEl = badge.querySelector('.gdl-badge-label');
+    const url = getUrlFn();
+
+    if (!gdlBridgeAlive) {
+      gdlSendToAppProtocol(url);
+      gdlFlashBadgeState(badge, labelEl, label, 'Abrindo app...', 'sent', 1800);
+      return;
+    }
+
+    gdlSending = true;
+    clearTimeout(badge._gdlTimer);
+    labelEl.textContent = 'Enviando...';
+    chrome.runtime.sendMessage({ type: 'gdl-bridge-open', url })
+      .then((res) => {
+        if (res && res.ok) {
+          gdlFlashBadgeState(badge, labelEl, label, 'Enviado pro app!', 'sent', 2000);
+        } else {
+          gdlBridgeAlive = false;
+          gdlFlashBadgeState(badge, labelEl, label, 'App fechado — clique de novo', 'warn', 2600);
+        }
+      })
+      .catch(() => {
+        gdlBridgeAlive = false;
+        gdlFlashBadgeState(badge, labelEl, label, 'App fechado — clique de novo', 'warn', 2600);
+      })
+      .finally(() => { gdlSending = false; });
   });
   badge.querySelector('.gdl-badge-close').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -52,17 +94,11 @@ function gdlBuildBadge(label, getUrlFn) {
   return badge;
 }
 
-// Só liga position:relative se o elemento ainda não tiver nenhum posicionamento
-// — não mexe em nada que o próprio site já tenha definido.
 function gdlEnsurePositioned(el) {
   if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
   return el;
 }
 
-// Acha um contêiner razoável pra ancorar o badge: sobe a partir do <video>
-// até achar um elemento grande o suficiente (evita cair num <div> interno
-// minúsculo). Evita depender de nomes de classe do site, que em sites como
-// Instagram/X mudam com frequência.
 function gdlFindVideoContainer() {
   const video = document.querySelector('video');
   if (!video) return null;
@@ -80,13 +116,10 @@ function gdlUpdateFullscreenVisibility() {
   if (el) el.classList.toggle('gdl-hidden', !!document.fullscreenElement);
 }
 
-// Lê o estado ligado/desligado do storage e reage a mudanças feitas no popup
-// (ou pelo "✕" do badge em outra aba). onReady roda toda vez que o estado é
-// (re)carregado, pra quem chamou decidir se injeta ou remove o badge.
 function gdlInitStorage(onReady) {
   try {
     chrome.storage.local.get([GDL_STORAGE_KEY], (res) => {
-      gdlEnabled = res[GDL_STORAGE_KEY] !== false; // padrão: ativado
+      gdlEnabled = res[GDL_STORAGE_KEY] !== false;
       onReady();
     });
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -95,20 +128,27 @@ function gdlInitStorage(onReady) {
       onReady();
     });
   } catch {
-    onReady(); // storage indisponível por algum motivo — segue com o padrão
+    onReady();
   }
 }
 
-// Rotina comum de "SPA": reinjeta ao trocar de URL (a maioria desses sites
-// não recarrega a página ao navegar) e observa mudanças no DOM como rede de
-// segurança. injectFn deve ser idempotente (não duplicar o badge).
 function gdlWatchAndInject(injectFn, { pollMs = 1200 } = {}) {
   let lastHref = location.href;
   setInterval(() => {
     if (location.href !== lastHref) { lastHref = location.href; gdlRemoveBadge(); }
     injectFn();
   }, pollMs);
+  gdlRefreshBridgeStatus();
+  setInterval(gdlRefreshBridgeStatus, 5000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) gdlRefreshBridgeStatus();
+  });
   document.addEventListener('fullscreenchange', gdlUpdateFullscreenVisibility);
-  new MutationObserver(() => injectFn()).observe(document.documentElement, { childList: true, subtree: true });
+  let pendingInject = false;
+  new MutationObserver(() => {
+    if (pendingInject) return;
+    pendingInject = true;
+    requestAnimationFrame(() => { pendingInject = false; injectFn(); });
+  }).observe(document.documentElement, { childList: true, subtree: true });
   gdlInitStorage(injectFn);
 }

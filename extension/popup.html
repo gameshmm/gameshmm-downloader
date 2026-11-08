@@ -6,7 +6,7 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    width: 250px;
+    width: 278px;
     background: radial-gradient(120% 80% at 0% 0%, rgba(181,123,255,0.16), transparent 60%), #0f0d1a;
     color: #f2f2f2;
     font-family: "Segoe UI", Roboto, Arial, sans-serif;
@@ -15,12 +15,71 @@
   h1 {
     font-size: 13px;
     font-weight: 700;
-    margin: 0 0 10px;
+    margin: 0 0 8px;
     display: flex;
     align-items: center;
     gap: 6px;
   }
   h1 img { width: 20px; height: 20px; border-radius: 6px; box-shadow: 0 4px 12px -4px rgba(181,123,255,0.7); }
+  .bridge-pill {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 9px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.09);
+    font-size: 11px;
+    color: rgba(255,255,255,0.75);
+  }
+  .bridge-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: none;
+    background: #888;
+  }
+  .bridge-pill.online { border-color: rgba(63,215,122,0.3); color: #bdf6d2; }
+  .bridge-pill.online .bridge-dot { background: #3fd77a; box-shadow: 0 0 8px rgba(63,215,122,0.8); }
+  .bridge-pill.offline { border-color: rgba(245,158,11,0.28); color: rgba(255,255,255,0.72); }
+  .bridge-pill.offline .bridge-dot { background: #f59e0b; }
+  .action-block { padding: 4px 0 10px; }
+  .btn-primary {
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #b57bff, #7a8cff);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: 0 4px 14px -4px rgba(124,92,255,0.6);
+    transition: opacity 0.15s, transform 0.12s;
+  }
+  .btn-primary:hover:not(:disabled) { opacity: 0.94; transform: translateY(-1px); }
+  .btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .btn-secondary {
+    width: 100%;
+    margin-top: 6px;
+    padding: 7px 10px;
+    border: 1px solid rgba(185,166,255,0.32);
+    border-radius: 8px;
+    background: rgba(181,123,255,0.12);
+    color: #e4dcff;
+    font-size: 11.5px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .btn-secondary:hover:not(:disabled) { background: rgba(181,123,255,0.22); }
+  .btn-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
   .row {
     display: flex;
     align-items: center;
@@ -29,7 +88,7 @@
     padding: 8px 0;
     border-top: 1px solid rgba(255,255,255,0.08);
   }
-  .row span { font-size: 12.5px; line-height: 1.35; }
+  .row span { font-size: 12px; line-height: 1.35; }
   .switch { position: relative; display: inline-block; width: 34px; height: 20px; flex: none; }
   .switch input { opacity: 0; width: 0; height: 0; }
   .slider {
@@ -42,33 +101,50 @@
   }
   input:checked + .slider { background: linear-gradient(135deg, #b57bff, #7a8cff); box-shadow: 0 0 12px -2px rgba(181,123,255,0.6); }
   input:checked + .slider::before { transform: translateX(14px); }
-  .hint { font-size: 11px; color: rgba(255,255,255,0.5); line-height: 1.5; margin: 10px 0 0; }
-  .login-block { padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.08); }
-  .login-block > span { font-size: 12.5px; display: block; margin-bottom: 6px; font-weight: 600; }
-  .login-block .hint { margin: 0; }
+  .hint { font-size: 11px; color: rgba(255,255,255,0.52); line-height: 1.45; margin: 6px 0 0; }
+  .login-block { padding: 10px 0 2px; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .login-block > span { font-size: 12px; display: block; margin-bottom: 4px; font-weight: 600; }
+  .login-status { font-size: 11px; color: #b9a6ff; margin-bottom: 4px; }
+  .login-status.ok { color: #8ff0b3; }
+  .login-block .hint { margin: 4px 0 0; }
   .login-block .hint b { color: #b9a6ff; }
   .btn-link {
     background: none; border: none; padding: 0; margin-top: 8px;
     color: #b9a6ff; font-size: 11px; font-weight: 600; cursor: pointer;
     text-decoration: underline; text-underline-offset: 2px; font-family: inherit;
+    text-align: left;
   }
   .btn-link:hover { color: #d5c9ff; }
+  .hidden { display: none; }
 </style>
 </head>
 <body>
   <div class="wrap">
     <h1><img src="icons/icon48.png" alt=""> gameshmm downloader</h1>
+    <div id="bridge-pill" class="bridge-pill">
+      <span class="bridge-dot"></span>
+      <span id="bridge-text">Verificando conexão com o app...</span>
+    </div>
+
+    <div class="action-block">
+      <button id="btn-send-tab" class="btn-primary" disabled>Mandar página atual pro app</button>
+      <p id="tab-hint" class="hint">Detectando aba ativa...</p>
+    </div>
+
     <div class="row">
-      <span>Mostrar botão de download no YouTube</span>
+      <span>Mostrar botão nos players</span>
       <label class="switch">
         <input type="checkbox" id="toggle">
         <span class="slider"></span>
       </label>
     </div>
-    <p class="hint">Quando ativado, aparece um botão pequeno no canto do vídeo pra mandar o download direto pro app. Dá pra remover clicando no "✕" do próprio botão também — isso desativa a mesma opção aqui.</p>
+    <p class="hint">Injeta o botão de download no YouTube, TikTok, Instagram, X e Spotify.</p>
+
     <div class="login-block">
       <span>Login do YouTube no app</span>
-      <p class="hint">Não dá pra conectar por aqui (o Chrome não deixa abrir o app a partir do popup da extensão). Vá até uma página do <b>youtube.com</b> — vai aparecer um botão roxo <b>"Conectar ao app"</b> fixo no canto inferior direito da tela. Clique nele. Depois de conectar, o botão some sozinho da página.</p>
+      <div id="login-status" class="login-status">Verificando sessão...</div>
+      <button id="btn-connect-login" class="btn-secondary hidden">Conectar YouTube ao app</button>
+      <p id="login-hint" class="hint">Com o app fechado, vá até uma página do <b>youtube.com</b> e clique no botão roxo <b>"Conectar ao app"</b> no canto da tela (o Chrome exige clique na página pra abrir o protocolo).</p>
       <button id="btn-reset-login" class="btn-link">Desconectei no app — mostrar o botão de novo</button>
     </div>
   </div>

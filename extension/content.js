@@ -1,26 +1,30 @@
-// Injeta um botão pequeno (estilo "baixar este vídeo" do IDM) no canto do
-// player do YouTube. Clicar nele abre um link gameshmm-downloader://, que o
-// Windows entrega direto pro app (abre ele se estiver fechado, ou só foca se
-// já estiver aberto) — sem precisar de servidor local nem instalar nada além
-// da extensão. Removível: o "✕" no próprio botão desativa a extensão pra
-// sempre (até reativar no popup), e o popup tem o mesmo controle.
+// Injeta o botão no player do YouTube e o botão flutuante "Conectar ao app".
+// Quando o desktop app está aberto, envia pela bridge HTTP local em 127.0.0.1
+// com confirmação real ("Enviado pro app!" / "Conectado ao app!"). Quando o app
+// está fechado, usa gameshmm-downloader:// de forma 100% síncrona no clique
+// para preservar o gesto do usuário no navegador.
 (() => {
   const PROTOCOL_SCHEME = 'gameshmm-downloader';
   const STORAGE_KEY = 'gdlButtonEnabled';
   const BADGE_ID = 'gdl-download-badge';
+  const LOGIN_BADGE_ID = 'gdl-login-badge';
+  const LOGIN_CONNECTED_KEY = 'gdlLoginConnected';
 
-  let enabled = true; // valor real vem do storage assim que carrega, abaixo
+  let enabled = true;
+  let bridgeStatus = { alive: false, port: null, cookiesConnected: false };
+  let sendingVideo = false;
+  let cachedLoginData = null;
+  let loginConnected = false;
+  let sendingLogin = false;
 
   function getVideoUrl() {
     const params = new URLSearchParams(location.search);
     const id = params.get('v');
-    // Canônico quando dá (link mais limpo pro app baixar), com fallback pra
-    // URL atual inteira (cobre /shorts/, embeds etc.).
     return id ? `https://www.youtube.com/watch?v=${id}` : location.href;
   }
 
   function isWatchPage() {
-    return location.pathname === '/watch' || location.pathname.startsWith('/shorts/');
+    return location.pathname === '/watch' || location.pathname.startsWith('/shorts/') || location.pathname.startsWith('/live/');
   }
 
   function removeBadge() {
@@ -28,11 +32,15 @@
     if (el) el.remove();
   }
 
-  function sendToApp() {
-    const url = `${PROTOCOL_SCHEME}://download?url=${encodeURIComponent(getVideoUrl())}`;
-    // Navegar pra um esquema não-http faz o navegador abrir o app registrado
-    // sem sair da página do YouTube (ele intercepta antes de navegar).
-    window.location.href = url;
+  function flashBadge(badge, labelEl, baseLabel, text, state, resetMs = 2000) {
+    clearTimeout(badge._gdlTimer);
+    labelEl.textContent = text;
+    if (state) badge.dataset.state = state;
+    else delete badge.dataset.state;
+    badge._gdlTimer = setTimeout(() => {
+      labelEl.textContent = baseLabel;
+      delete badge.dataset.state;
+    }, resetMs);
   }
 
   function disableForever() {
@@ -46,17 +54,46 @@
     badge.id = BADGE_ID;
     badge.className = 'gdl-badge';
     badge.title = 'Baixar este vídeo com o gameshmm downloader';
+    const baseLabel = 'Baixar este vídeo';
 
     badge.innerHTML = `
       <svg class="gdl-badge-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-      <span class="gdl-badge-label">Baixar este vídeo</span>
+      <span class="gdl-badge-label">${baseLabel}</span>
       <button type="button" class="gdl-badge-close" title="Remover este botão">✕</button>
     `;
 
+    badge.addEventListener('pointerenter', () => { refreshBridgeState(); });
     badge.addEventListener('click', (e) => {
       if (e.target.closest('.gdl-badge-close')) return;
-      sendToApp();
+      if (sendingVideo) return;
+      const labelEl = badge.querySelector('.gdl-badge-label');
+      const videoUrl = getVideoUrl();
+
+      if (!bridgeStatus.alive) {
+        window.location.href = `${PROTOCOL_SCHEME}://download?url=${encodeURIComponent(videoUrl)}`;
+        flashBadge(badge, labelEl, baseLabel, 'Abrindo app...', 'sent', 1800);
+        return;
+      }
+
+      sendingVideo = true;
+      clearTimeout(badge._gdlTimer);
+      labelEl.textContent = 'Enviando...';
+      chrome.runtime.sendMessage({ type: 'gdl-bridge-open', url: videoUrl })
+        .then((res) => {
+          if (res && res.ok) {
+            flashBadge(badge, labelEl, baseLabel, 'Enviado pro app!', 'sent', 2000);
+          } else {
+            bridgeStatus.alive = false;
+            flashBadge(badge, labelEl, baseLabel, 'App fechado — clique de novo', 'warn', 2600);
+          }
+        })
+        .catch(() => {
+          bridgeStatus.alive = false;
+          flashBadge(badge, labelEl, baseLabel, 'App fechado — clique de novo', 'warn', 2600);
+        })
+        .finally(() => { sendingVideo = false; });
     });
+
     badge.querySelector('.gdl-badge-close').addEventListener('click', (e) => {
       e.stopPropagation();
       disableForever();
@@ -67,10 +104,10 @@
 
   function injectBadge() {
     if (!enabled || !isWatchPage()) { removeBadge(); return; }
-    if (document.getElementById(BADGE_ID)) return; // já injetado pra esse vídeo
+    if (document.getElementById(BADGE_ID)) return;
 
     const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-    if (!player) return; // player ainda não montou — o observer abaixo tenta de novo
+    if (!player) return;
 
     player.appendChild(buildBadge());
   }
@@ -81,9 +118,6 @@
     el.classList.toggle('gdl-hidden', !!document.fullscreenElement);
   }
 
-  // YouTube é uma SPA — trocar de vídeo não recarrega a página. Reagimos ao
-  // evento que o próprio YouTube dispara ao terminar uma navegação interna,
-  // com um polling leve como rede de segurança caso o evento não dispare.
   document.addEventListener('yt-navigate-finish', () => { removeBadge(); injectBadge(); });
   let lastHref = location.href;
   setInterval(() => {
@@ -92,12 +126,17 @@
 
   document.addEventListener('fullscreenchange', updateFullscreenVisibility);
 
-  const observer = new MutationObserver(() => injectBadge());
+  let pendingBadgeCheck = false;
+  const observer = new MutationObserver(() => {
+    if (pendingBadgeCheck) return;
+    pendingBadgeCheck = true;
+    requestAnimationFrame(() => { pendingBadgeCheck = false; injectBadge(); });
+  });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
   try {
     chrome.storage.local.get([STORAGE_KEY], (res) => {
-      enabled = res[STORAGE_KEY] !== false; // padrão: ativado
+      enabled = res[STORAGE_KEY] !== false;
       injectBadge();
     });
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -106,33 +145,10 @@
       if (enabled) injectBadge(); else removeBadge();
     });
   } catch {
-    injectBadge(); // storage indisponível por algum motivo — segue com o padrão
+    injectBadge();
   }
 
-  // ── Login: botão "Conectar ao app" fixo no canto da página ────────────────
-  // Precisa ser um clique de verdade AQUI na página (não no popup da
-  // extensão) — testado e confirmado que o Chrome só libera a navegação pro
-  // protocolo customizado (gameshmm-downloader://) quando ela nasce de um
-  // gesto real do usuário no próprio documento que está navegando.
-  //
-  // Segunda pegadinha, também testada e confirmada: mesmo com o clique
-  // acontecendo aqui na página, um simples `await` entre o clique e o
-  // window.location.href (pra buscar os cookies no background) já é o
-  // suficiente pro Chrome não considerar mais a navegação como resultado
-  // direto do clique, e aí ele barra o handoff em silêncio de novo — igual
-  // aconteceu com a versão anterior desse botão. Por isso os cookies são
-  // buscados com ANTECEDÊNCIA (atualizados a cada poucos segundos em segundo
-  // plano) e ficam guardados em cache: no momento do clique, tudo que roda é
-  // pegar esse valor já pronto e navegar, sem nenhum await no meio.
-  const LOGIN_BADGE_ID = 'gdl-login-badge';
-  const LOGIN_CONNECTED_KEY = 'gdlLoginConnected';
-  let cachedLoginData = null; // base64 pronto pra usar, ou null se ainda não tem cookie de login
-  // A extensão não tem canal de volta pra saber o status real do app — isso
-  // é só a MELHOR SUPOSIÇÃO (assumimos sucesso assim que o clique dispara a
-  // navegação). Se desconectar no app, o botão "Mostrar de novo" no popup
-  // da extensão limpa essa marcação.
-  let loginConnected = false;
-
+  // ── Login e sincronia com bridge local ────────────────────────────────────
   function toBase64Utf8(str) {
     const bytes = new TextEncoder().encode(str);
     let binary = '';
@@ -148,50 +164,97 @@
       cachedLoginData = null;
     }
   }
+
+  async function refreshBridgeState() {
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'gdl-bridge-status' });
+      if (res && res.alive) {
+        bridgeStatus = { alive: true, port: res.port, cookiesConnected: !!res.cookiesConnected };
+        loginConnected = !!res.cookiesConnected;
+        injectLoginBadge();
+      } else {
+        bridgeStatus = { alive: false, port: null, cookiesConnected: false };
+      }
+    } catch {
+      bridgeStatus = { alive: false, port: null, cookiesConnected: false };
+    }
+  }
+
   refreshLoginCookiesCache();
+  refreshBridgeState();
   setInterval(refreshLoginCookiesCache, 4000);
+  setInterval(refreshBridgeState, 4500);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      refreshLoginCookiesCache();
+      refreshBridgeState();
+    }
+  });
+
+  function removeLoginBadgeSoon() {
+    setTimeout(() => { const el = document.getElementById(LOGIN_BADGE_ID); if (el) el.remove(); }, 1500);
+  }
 
   function buildLoginBadge() {
     const badge = document.createElement('div');
     badge.id = LOGIN_BADGE_ID;
     badge.className = 'gdl-badge gdl-badge-floating gdl-login-badge';
     badge.title = 'Conectar o login do YouTube/Google ao gameshmm downloader';
+    const baseLabel = 'Conectar ao app';
     badge.innerHTML = `
       <svg class="gdl-badge-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      <span class="gdl-badge-label">Conectar ao app</span>
+      <span class="gdl-badge-label">${baseLabel}</span>
     `;
-    // Handler SÍNCRONO de propósito — nada de async/await aqui dentro.
+    badge.addEventListener('pointerenter', () => { refreshBridgeState(); refreshLoginCookiesCache(); });
     badge.addEventListener('click', () => {
+      if (sendingLogin) return;
       const label = badge.querySelector('.gdl-badge-label');
-      const originalText = label.textContent;
       if (!cachedLoginData) {
         label.textContent = 'Faça login e aguarde...';
         refreshLoginCookiesCache();
-        setTimeout(() => { label.textContent = originalText; }, 2500);
+        setTimeout(() => { label.textContent = baseLabel; }, 2500);
         return;
       }
-      const url = `${PROTOCOL_SCHEME}://cookies?data=${encodeURIComponent(cachedLoginData)}`;
-      // Mesmo truque do botão de download, agora 100% síncrono a partir do
-      // clique — é isso que faz o Chrome liberar o handoff externo.
-      window.location.href = url;
+
+      if (!bridgeStatus.alive) {
+        const url = `${PROTOCOL_SCHEME}://cookies?data=${encodeURIComponent(cachedLoginData)}`;
+        window.location.href = url;
+        label.textContent = 'Conectando...';
+        loginConnected = true;
+        try { chrome.storage.local.set({ [LOGIN_CONNECTED_KEY]: true }); } catch {}
+        removeLoginBadgeSoon();
+        return;
+      }
+
+      sendingLogin = true;
       label.textContent = 'Conectando...';
-      loginConnected = true;
-      try { chrome.storage.local.set({ [LOGIN_CONNECTED_KEY]: true }); } catch {}
-      removeLoginBadgeSoon();
+      chrome.runtime.sendMessage({ type: 'gdl-bridge-cookies' })
+        .then((res) => {
+          if (res && res.ok) {
+            label.textContent = 'Conectado ao app!';
+            badge.dataset.state = 'sent';
+            loginConnected = true;
+            try { chrome.storage.local.set({ [LOGIN_CONNECTED_KEY]: true }); } catch {}
+            removeLoginBadgeSoon();
+          } else if (res && res.offline) {
+            bridgeStatus.alive = false;
+            flashBadge(badge, label, baseLabel, 'App fechado — clique de novo', 'warn', 2600);
+          } else {
+            flashBadge(badge, label, baseLabel, 'Faça login e tente de novo', 'warn', 2600);
+          }
+        })
+        .catch(() => {
+          bridgeStatus.alive = false;
+          flashBadge(badge, label, baseLabel, 'App fechado — clique de novo', 'warn', 2600);
+        })
+        .finally(() => { sendingLogin = false; });
     });
     return badge;
   }
 
-  // Some o botão logo após o clique (sem sumir na hora, pra dar tempo do
-  // usuário ver o "Conectando..."), e não injeta de novo enquanto
-  // loginConnected for true.
-  function removeLoginBadgeSoon() {
-    setTimeout(() => { const el = document.getElementById(LOGIN_BADGE_ID); if (el) el.remove(); }, 1500);
-  }
-
   function injectLoginBadge() {
     if (loginConnected) { const el = document.getElementById(LOGIN_BADGE_ID); if (el) el.remove(); return; }
-    if (document.getElementById(LOGIN_BADGE_ID)) return; // já injetado
+    if (document.getElementById(LOGIN_BADGE_ID)) return;
     document.body.appendChild(buildLoginBadge());
   }
 
@@ -206,10 +269,8 @@
       injectLoginBadge();
     });
   } catch {
-    injectLoginBadge(); // storage indisponível por algum motivo — segue com o padrão
+    injectLoginBadge();
   }
-  // Some SPAs do YouTube removem/recriam <body> em navegações internas raras
-  // — o observer já ativo acima também cobre a recriação desse badge.
   const loginObserver = new MutationObserver(() => injectLoginBadge());
   loginObserver.observe(document.documentElement, { childList: true, subtree: false });
 })();
